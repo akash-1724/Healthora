@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "healthora-backend"
+version = "0.1.0"
+description = "Very simple FastAPI backend for college HMS MVP"
+authors = ["Healthora Project"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.116.1"
+uvicorn = { extras = ["standard"], version = "^0.35.0" }
+sqlalchemy = "^2.0.43"
+psycopg2-binary = "^2.9.10"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
