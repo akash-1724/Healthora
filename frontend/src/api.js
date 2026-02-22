@@ -19,6 +19,8 @@ export const api = {
   login: (username, password) => request("/api/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   me: () => request("/api/me"),
   getUsers: () => request("/api/users"),
+  getRoles: () => request("/api/users/roles"),
   createUser: (payload) => request("/api/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (userId, payload) => request(`/api/users/${userId}`, { method: "PUT", body: JSON.stringify(payload) }),
   getInventory: () => request("/api/inventory"),
 };

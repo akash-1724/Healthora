@@ -20,22 +20,27 @@ function TopNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const [username, setUsername] = React.useState(localStorage.getItem("username") || "User");
+  const [role, setRole] = React.useState(localStorage.getItem("role") || "");
 
   React.useEffect(() => {
     api
       .me()
       .then((user) => {
         setUsername(user.username);
+        setRole(user.role);
         localStorage.setItem("username", user.username);
+        localStorage.setItem("role", user.role);
       })
       .catch(() => {
         setUsername(localStorage.getItem("username") || "User");
+        setRole(localStorage.getItem("role") || "");
       });
   }, [location.pathname]);
 
   function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
+    localStorage.removeItem("role");
     navigate("/");
   }
 
@@ -84,9 +89,11 @@ function TopNav() {
         <Link to="/reports" style={{ ...navLinkStyle, background: location.pathname === "/reports" ? "#20639b" : "transparent" }}>
           Reports
         </Link>
-        <Link to="/users" style={{ ...navLinkStyle, background: location.pathname === "/users" ? "#20639b" : "transparent" }}>
-          Users
-        </Link>
+        {role === "System Admin" && (
+          <Link to="/users" style={{ ...navLinkStyle, background: location.pathname === "/users" ? "#20639b" : "transparent" }}>
+            Users
+          </Link>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -102,7 +109,13 @@ function TopNav() {
   );
 }
 
-function ProtectedPage({ children }) {
+function ProtectedPage({ children, roleRequired }) {
+  const role = localStorage.getItem("role");
+
+  if (roleRequired && role !== roleRequired) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return (
     <Protected>
       <div style={{ minHeight: "100vh", background: "#f4f7fb" }}>
@@ -129,7 +142,7 @@ function App() {
         <Route
           path="/users"
           element={
-            <ProtectedPage>
+            <ProtectedPage roleRequired="System Admin">
               <Users />
             </ProtectedPage>
           }

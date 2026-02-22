@@ -16,7 +16,8 @@ export default function Login() {
     try {
       const data = await api.login(username, password);
       localStorage.setItem("token", data.token);
-      localStorage.setItem("username", username);
+      localStorage.setItem("username", data.username);
+      localStorage.setItem("role", data.role);
       navigate("/dashboard");
     } catch (err) {
       setError(err.message);

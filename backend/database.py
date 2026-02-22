@@ -1,7 +1,12 @@
 import os
+from pathlib import Path
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from dotenv import load_dotenv
+
+# Load .env from the project root (one level above the backend/ folder)
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 
 DATABASE_URL = os.getenv(
@@ -11,7 +16,10 @@ DATABASE_URL = os.getenv(
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 def get_db():

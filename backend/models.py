@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -34,3 +34,14 @@ class Token(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
 
     user = relationship("User")
+
+
+class InventoryItem(Base):
+    __tablename__ = "inventory_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    batch = Column(String, nullable=False)
+    expiry = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False, default=0)
+    price = Column(Float, nullable=False, default=0.0)

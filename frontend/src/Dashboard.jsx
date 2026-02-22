@@ -1,15 +1,36 @@
 import React from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { api } from "./api";
+
 const expiryRisk = [
-  "Amoxicillin (Batch B123) - expires in 10 days",
-  "Paracetamol (Batch P210) - expires in 14 days",
-  "Vitamin C (Batch V009) - expires in 21 days",
+  "Amoxicillin (Batch A-5620) - expires in 27 days",
+  "Paracetamol (Batch P-1001) - expires in 53 days",
+  "Cetirizine (Batch C-3022) - expires in 200 days",
 ];
 
 const notifications = ["Expiry Alert", "Reorder Suggestion", "Info Message"];
 
 export default function Dashboard() {
+  const role = localStorage.getItem("role");
+  const [totalStock, setTotalStock] = useState(null);
+  const [totalItems, setTotalItems] = useState(null);
+
+  useEffect(() => {
+    api
+      .getInventory()
+      .then((items) => {
+        const stock = items.reduce((sum, item) => sum + item.quantity, 0);
+        setTotalStock(stock);
+        setTotalItems(items.length);
+      })
+      .catch(() => {
+        setTotalStock("N/A");
+        setTotalItems("N/A");
+      });
+  }, []);
+
   return (
     <div style={{ fontFamily: "Arial" }}>
       <h2 style={{ marginTop: 0 }}>Dashboard</h2>
@@ -19,14 +40,16 @@ export default function Dashboard() {
         <div style={{ background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 12, padding: 16 }}>
           <h3 style={{ marginTop: 0 }}>Usable Stock</h3>
           <p style={{ margin: "8px 0", fontSize: 18 }}>
-            Total Stock: <b>160</b>
+            Total Units: <b>{totalStock !== null ? totalStock : "Loading..."}</b>
           </p>
           <p style={{ margin: "8px 0", fontSize: 18 }}>
-            Expiring Stock: <b>449</b>
+            Medicines: <b>{totalItems !== null ? totalItems : "Loading..."}</b>
           </p>
-          <button type="button" style={{ marginTop: 8, padding: "8px 12px", border: "none", borderRadius: 8, background: "#0284c7", color: "white", cursor: "pointer" }}>
-            View Stock Details
-          </button>
+          <Link to="/inventory">
+            <button type="button" style={{ marginTop: 8, padding: "8px 12px", border: "none", borderRadius: 8, background: "#0284c7", color: "white", cursor: "pointer" }}>
+              View Stock Details
+            </button>
+          </Link>
         </div>
 
         <div style={{ background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
@@ -47,7 +70,7 @@ export default function Dashboard() {
           <h3 style={{ marginTop: 0 }}>Notifications</h3>
           {notifications.map((msg) => (
             <p key={msg} style={{ margin: "10px 0" }}>
-              {msg === "Info Message" ? "i" : "!"} {msg}
+              {msg === "Info Message" ? "ℹ️" : "⚠️"} {msg}
             </p>
           ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -65,9 +88,11 @@ export default function Dashboard() {
         <Link to="/inventory" style={{ textDecoration: "none", padding: "10px 14px", background: "#2563eb", color: "white", borderRadius: 8 }}>
           Go to Inventory
         </Link>
-        <Link to="/users" style={{ textDecoration: "none", padding: "10px 14px", background: "#0ea5e9", color: "white", borderRadius: 8 }}>
-          Go to Users
-        </Link>
+        {role === "admin" && (
+          <Link to="/users" style={{ textDecoration: "none", padding: "10px 14px", background: "#0ea5e9", color: "white", borderRadius: 8 }}>
+            Go to Users
+          </Link>
+        )}
       </div>
     </div>
   );

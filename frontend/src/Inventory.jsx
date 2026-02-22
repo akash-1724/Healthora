@@ -1,14 +1,31 @@
 import React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const sampleBatches = [
-  { id: 1, medicine: "Paracetamol", batch: "P-1001", expiry: "2026-04-15", quantity: 240, price: "12.50" },
-  { id: 2, medicine: "Amoxicillin", batch: "A-5620", expiry: "2026-03-20", quantity: 130, price: "18.00" },
-  { id: 3, medicine: "Cetirizine", batch: "C-3022", expiry: "2026-09-10", quantity: 95, price: "9.75" },
-];
+import { api } from "./api";
 
 export default function Inventory() {
-  const [items] = useState(sampleBatches);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    api
+      .getInventory()
+      .then((data) => {
+        if (!mounted) return;
+        setItems(data);
+        setError("");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setError("Could not load inventory.");
+      })
+      .finally(() => mounted && setLoading(false));
+
+    return () => (mounted = false);
+  }, []);
 
   return (
     <div style={{ fontFamily: "Arial" }}>
@@ -27,15 +44,29 @@ export default function Inventory() {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
-              <tr key={item.id} style={{ borderTop: "1px solid #eef2f7" }}>
-                <td style={{ padding: 12 }}>{item.medicine}</td>
-                <td style={{ padding: 12 }}>{item.batch}</td>
-                <td style={{ padding: 12 }}>{item.expiry}</td>
-                <td style={{ padding: 12 }}>{item.quantity}</td>
-                <td style={{ padding: 12 }}>Rs. {item.price}</td>
+            {loading ? (
+              <tr>
+                <td colSpan={5} style={{ padding: 12 }}>
+                  Loading...
+                </td>
               </tr>
-            ))}
+            ) : error ? (
+              <tr>
+                <td colSpan={5} style={{ padding: 12, color: "#dc2626" }}>
+                  {error}
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => (
+                <tr key={item.id} style={{ borderTop: "1px solid #eef2f7" }}>
+                  <td style={{ padding: 12 }}>{item.name}</td>
+                  <td style={{ padding: 12 }}>{item.batch}</td>
+                  <td style={{ padding: 12 }}>{item.expiry}</td>
+                  <td style={{ padding: 12 }}>{item.quantity}</td>
+                  <td style={{ padding: 12 }}>{item.price !== undefined ? `Rs. ${item.price}` : "—"}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

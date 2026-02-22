@@ -1,0 +1,10 @@
+{
+    "pythonVersion": "3.11",
+    "include": [
+        "backend"
+    ],
+    "extraPaths": [
+        "C:/Jacob/Healthora/.venv/Lib/site-packages",
+        "C:/Jacob/Healthora/backend"
+    ]
+}
