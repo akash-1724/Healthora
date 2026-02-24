@@ -14,3 +14,5 @@ Important points:
 - Frontend waits for backend using `depends_on`.
 - Volume `postgres_data` stores DB data persistently.
 - Postgres host port is configurable with `POSTGRES_HOST_PORT` to avoid local port conflicts.
+- Backend container runs Alembic migration before API startup.
+- Compose file includes env defaults to avoid empty-variable startup errors.

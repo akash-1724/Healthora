@@ -5,16 +5,15 @@ Frontend root file.
 What it does:
 
 - Sets up React Router routes.
-- Protects dashboard/users/inventory/reorder/reports routes using token from localStorage.
-- Shows top navigation bar on every protected page.
-- Top bar includes HEALTHORA logo text, Home button, tabs, user name, and Logout.
+- Defines three main routes:
+  - `/` landing page
+  - `/login` login page
+  - `/dashboard` protected role-based dashboard
+- Redirects unknown routes based on auth state.
 - Mounts React app into `#root`.
 
 Routes:
 
-- `/` -> Login
-- `/dashboard` -> Dashboard
-- `/users` -> Users
-- `/inventory` -> Inventory
-- `/reorder` -> Reorder
-- `/reports` -> Reports
+- `/` -> Landing
+- `/login` -> Login
+- `/dashboard` -> Role-based dashboard

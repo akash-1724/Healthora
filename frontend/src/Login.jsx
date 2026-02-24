@@ -7,56 +7,55 @@ import { api } from "./api";
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setLoading(true);
     try {
       const data = await api.login(username, password);
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("username", username);
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem("token", data.access_token);
+      storage.setItem("username", username);
+      storage.setItem("role", data.role);
+      storage.setItem("displayName", data.display_name);
       navigate("/dashboard");
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        fontFamily: "Arial",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "linear-gradient(135deg, #dbeafe, #f0fdfa)",
-      }}
-    >
-      <div style={{ width: 360, background: "white", padding: 24, borderRadius: 12, boxShadow: "0 10px 25px rgba(0,0,0,0.08)" }}>
-        <h2 style={{ marginTop: 0, color: "#1e3a8a" }}>HEALTHORA Login</h2>
-        <p style={{ marginTop: 0, color: "#4b5563", fontSize: 14 }}>Welcome back. Please sign in to continue.</p>
+    <div className="login-root">
+      <div className="login-card">
+        <h2 style={{ marginTop: 0 }}>HEALTHORA Login</h2>
+        <p>Welcome back. Please sign in to continue.</p>
         <form onSubmit={handleSubmit}>
-        <input
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          style={{ width: "100%", marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ width: "100%", marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
-        />
-        <button type="submit" style={{ padding: "10px 14px", width: "100%", background: "#2563eb", color: "white", border: "none", borderRadius: 8, cursor: "pointer" }}>
-          Login
-        </button>
-      </form>
-        {error ? <p style={{ color: "#dc2626" }}>{error}</p> : null}
-        <p style={{ marginBottom: 0, color: "#6b7280", fontSize: 13 }}>Default user: admin / admin123</p>
+          <input className="input" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+          <input className="input" type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <div className="actions-cell" style={{ marginBottom: 10 }}>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} /> Remember me
+            </label>
+            <button type="button" className="secondary-btn compact" onClick={() => setShowPassword((prev) => !prev)}>
+              {showPassword ? "Hide" : "Show"} Password
+            </button>
+          </div>
+          <button type="submit" className="primary-btn" style={{ width: "100%" }} disabled={loading || !username || !password}>
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+        {error ? <p className="error">{error}</p> : null}
+        <p style={{ marginBottom: 0, fontSize: 13 }}>
+          Seed users: sysadmin/admin, cmo1/cmo, pm1/manager, senior1/senior, staff1/staff, clerk1/clerk
+        </p>
       </div>
     </div>
   );

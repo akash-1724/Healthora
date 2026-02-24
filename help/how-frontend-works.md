@@ -1,14 +1,13 @@
 # How Frontend Works
 
 1. React starts from `frontend/src/App.jsx`.
-2. Login page calls backend login API.
-3. Token is saved in localStorage.
-4. Protected routes check token existence.
-5. Top navigation stays visible on all protected pages.
-6. Dashboard shows stock/expiry/notification cards.
-7. Inventory page shows medicine batch table and placeholder buttons.
-8. Reorder page shows reorder suggestions table.
-9. Reports page provides AI report placeholder input/buttons.
-10. Users page shows users list and add-user form.
+2. Landing page (`/`) shows project details + right-side login panel.
+3. Login supports Remember Me and stores JWT in localStorage or sessionStorage.
+4. `/dashboard` route is protected by token check.
+5. Dashboard loads role access modules from backend.
+6. Sidebar tabs are shown/hidden based on role.
+7. Main panel renders module views (dashboard, users, patients, drugs, inventory, ai-report, settings).
+8. Inventory uses tabs (Drugs / Batches / Stock View) with permission-gated actions.
+9. Dashboard includes expiry filters, notification actions, and global search.
 
-No advanced styling, only simple inline styles.
+Styling is handled by `frontend/src/styles.css`.

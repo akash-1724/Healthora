@@ -8,4 +8,5 @@ Steps:
 2. Install Poetry
 3. Install dependencies from `pyproject.toml`
 4. Copy backend files
-5. Run `uvicorn main:app` on port `8000`
+5. Run `alembic upgrade head`
+6. Start `uvicorn main:app` on port `8000`

@@ -1,11 +1,17 @@
 # File: `backend/auth.py`
 
-Contains simple authentication logic.
+Authentication routes with JWT.
 
-- `login_user(...)`: checks username/password, creates UUID token, stores token in DB.
-- `get_current_user(...)`: reads `Authorization: Bearer <token>`, validates token, returns user.
+Endpoints:
+
+- `POST /api/login`:
+  - validates plain text username/password
+  - returns JWT bearer token
+- `GET /api/me`:
+  - validates Bearer token
+  - returns current user profile and role
 
 Libraries:
 
-- `uuid` for token generation.
-- FastAPI `HTTPException` for simple error responses.
+- FastAPI routing + dependency injection.
+- JWT helper from `security.py`.

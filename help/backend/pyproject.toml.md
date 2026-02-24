@@ -8,6 +8,8 @@ Dependencies used:
 - `uvicorn`: server to run FastAPI
 - `sqlalchemy`: ORM
 - `psycopg2-binary`: PostgreSQL driver
+- `alembic`: DB migrations
+- `PyJWT`: JWT creation and verification
 
 Python version:
 

@@ -1,16 +1,17 @@
 # File: `backend/main.py`
 
-Backend entry point.
+Main FastAPI bootstrap file.
 
-What it does:
+Responsibilities:
 
-- Creates FastAPI app.
-- Adds CORS so frontend can call backend.
-- Creates tables at startup.
-- Seeds role `admin` and user `admin/admin123`.
-- Provides `/api/login` and `/api/me` endpoints.
-- Includes routers from `users.py` and `inventory.py`.
+- Creates app and CORS configuration.
+- Runs seed routine on startup (`seed_all`).
+- Registers routers:
+  - auth routes (`/api/login`, `/api/me`)
+  - user management routes
+  - inventory/data routes
+  - dashboard routes
 
-Ports:
+Note:
 
-- Runs on `8000` inside container.
+- Database schema creation is handled by Alembic migrations, not `create_all`.
