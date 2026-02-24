@@ -35,6 +35,36 @@ def to_batch_read(batch: DrugBatch) -> DrugBatchRead:
     )
 
 
+def to_patient_read(patient: Patient, creator_username: str | None = None) -> PatientRead:
+    return PatientRead(
+        patient_id=patient.patient_id,
+        name=patient.name,
+        address=patient.address,
+        gender=patient.gender,
+        contact=patient.contact,
+        dob=patient.dob,
+        created_by_user_id=patient.created_by_user_id,
+        created_by=creator_username,
+        created_at=patient.created_at,
+        is_archived=patient.is_archived,
+    )
+
+
+def to_drug_read(drug: Drug, total_quantity: int = 0, active_batches: int = 0) -> DrugRead:
+    return DrugRead(
+        drug_id=drug.drug_id,
+        drug_name=drug.drug_name,
+        generic_name=drug.generic_name,
+        formulation=drug.formulation,
+        strength=drug.strength,
+        schedule_type=drug.schedule_type,
+        is_active=drug.is_active,
+        low_stock_threshold=drug.low_stock_threshold,
+        total_quantity=total_quantity,
+        active_batches=active_batches,
+    )
+
+
 @router.get("/inventory", response_model=list[DrugBatchRead], dependencies=[Depends(require_permission("view_inventory"))])
 def get_inventory(db: Session = Depends(get_db)):
     batches = db.query(DrugBatch).join(Drug).order_by(DrugBatch.batch_id.asc()).all()
@@ -43,7 +73,16 @@ def get_inventory(db: Session = Depends(get_db)):
 
 @router.get("/drugs", response_model=list[DrugRead], dependencies=[Depends(require_permission("view_drugs"))])
 def list_drugs(db: Session = Depends(get_db)):
-    return db.query(Drug).order_by(Drug.drug_id.asc()).all()
+    drugs = db.query(Drug).order_by(Drug.drug_id.asc()).all()
+    batches = db.query(DrugBatch).all()
+    stats: dict[int, tuple[int, int]] = {}
+    for batch in batches:
+        total_qty, active_count = stats.get(batch.drug_id, (0, 0))
+        total_qty += batch.quantity_available
+        if not batch.is_expired and batch.quantity_available > 0:
+            active_count += 1
+        stats[batch.drug_id] = (total_qty, active_count)
+    return [to_drug_read(drug, *(stats.get(drug.drug_id, (0, 0)))) for drug in drugs]
 
 
 @router.post("/drugs", response_model=DrugRead, dependencies=[Depends(require_permission("add_drug"))])
@@ -63,7 +102,7 @@ def add_drug(payload: DrugCreate, db: Session = Depends(get_db)):
     db.add(drug)
     db.commit()
     db.refresh(drug)
-    return drug
+    return to_drug_read(drug)
 
 
 @router.put("/drugs/{drug_id}", response_model=DrugRead, dependencies=[Depends(require_permission("add_drug"))])
@@ -89,7 +128,10 @@ def update_drug(drug_id: int, payload: DrugUpdate, db: Session = Depends(get_db)
 
     db.commit()
     db.refresh(drug)
-    return drug
+    related = db.query(DrugBatch).filter(DrugBatch.drug_id == drug.drug_id).all()
+    total_qty = sum(row.quantity_available for row in related)
+    active_count = sum(1 for row in related if not row.is_expired and row.quantity_available > 0)
+    return to_drug_read(drug, total_qty, active_count)
 
 
 @router.patch("/drugs/{drug_id}/disable", response_model=DrugRead, dependencies=[Depends(require_permission("add_drug"))])
@@ -100,7 +142,10 @@ def disable_drug(drug_id: int, db: Session = Depends(get_db)):
     drug.is_active = False
     db.commit()
     db.refresh(drug)
-    return drug
+    related = db.query(DrugBatch).filter(DrugBatch.drug_id == drug.drug_id).all()
+    total_qty = sum(row.quantity_available for row in related)
+    active_count = sum(1 for row in related if not row.is_expired and row.quantity_available > 0)
+    return to_drug_read(drug, total_qty, active_count)
 
 
 @router.post("/drug-batches", response_model=DrugBatchRead, dependencies=[Depends(require_permission("add_batch"))])
@@ -157,7 +202,11 @@ def update_inventory(batch_id: int, payload: InventoryUpdate, db: Session = Depe
 
 @router.get("/patients", response_model=list[PatientRead], dependencies=[Depends(require_permission("view_patients"))])
 def list_patients(db: Session = Depends(get_db)):
-    return db.query(Patient).filter(Patient.is_archived.is_(False)).order_by(Patient.patient_id.asc()).all()
+    patients = db.query(Patient).filter(Patient.is_archived.is_(False)).order_by(Patient.patient_id.asc()).all()
+    creator_ids = {row.created_by_user_id for row in patients if row.created_by_user_id is not None}
+    creators = db.query(User).filter(User.user_id.in_(creator_ids)).all() if creator_ids else []
+    creator_map = {user.user_id: user.username for user in creators}
+    return [to_patient_read(row, creator_map.get(row.created_by_user_id)) for row in patients]
 
 
 @router.post("/patients", response_model=PatientRead, dependencies=[Depends(require_permission("add_patients"))])
@@ -177,7 +226,7 @@ def add_patient(payload: PatientCreate, db: Session = Depends(get_db), current_u
     db.add(patient)
     db.commit()
     db.refresh(patient)
-    return patient
+    return to_patient_read(patient, current_user.username)
 
 
 @router.put("/patients/{patient_id}", response_model=PatientRead, dependencies=[Depends(require_permission("view_patients"))])
@@ -198,7 +247,8 @@ def edit_patient(patient_id: int, payload: PatientUpdate, db: Session = Depends(
         patient.dob = payload.dob
     db.commit()
     db.refresh(patient)
-    return patient
+    creator = db.query(User).filter(User.user_id == patient.created_by_user_id).first() if patient.created_by_user_id else None
+    return to_patient_read(patient, creator.username if creator else None)
 
 
 @router.patch("/patients/{patient_id}/archive", response_model=PatientRead, dependencies=[Depends(require_permission("view_patients"))])
@@ -209,7 +259,8 @@ def archive_patient(patient_id: int, db: Session = Depends(get_db)):
     patient.is_archived = True
     db.commit()
     db.refresh(patient)
-    return patient
+    creator = db.query(User).filter(User.user_id == patient.created_by_user_id).first() if patient.created_by_user_id else None
+    return to_patient_read(patient, creator.username if creator else None)
 
 
 @router.get("/ai-report", dependencies=[Depends(require_permission("view_ai_report"))])

@@ -411,6 +411,17 @@ export default function Dashboard() {
     }
   }
 
+  function openDrugBatches(drugId) {
+    if (!hasPermission("view_inventory")) {
+      setError("You can view drugs, but batch details require inventory access.");
+      return;
+    }
+    setError("");
+    setActiveModule("inventory");
+    setInventoryTab("batches");
+    setBatchDrugFilter(String(drugId));
+  }
+
   async function markBatchExpired(row) {
     if (!window.confirm(`Mark batch ${row.batch_no} as expired?`)) return;
     try {
@@ -618,7 +629,7 @@ export default function Dashboard() {
                       <td>{row.patient_id}</td>
                       <td>{row.name}</td>
                       <td>{row.contact || "-"}</td>
-                      <td>{row.created_by_user_id || "-"}</td>
+                      <td>{row.created_by || "System"}</td>
                       <td>{String(row.created_at || "").slice(0, 10) || "-"}</td>
                       <td className="actions-cell">
                         <button className="secondary-btn compact">View Details</button>
@@ -655,19 +666,17 @@ export default function Dashboard() {
                   {drugs
                     .filter((row) => !globalSearch || row.drug_name.toLowerCase().includes(globalSearch.toLowerCase()))
                     .map((drug) => {
-                      const rows = inventoryRows.filter((row) => row.drug_id === drug.drug_id);
-                      const totalQty = rows.reduce((acc, row) => acc + row.quantity_available, 0);
                       return (
                         <tr key={drug.drug_id}>
                           <td>{drug.drug_name}</td>
                           <td>{drug.generic_name || "-"}</td>
                           <td>{drug.strength || "-"}</td>
-                          <td>{totalQty}</td>
-                          <td>{rows.length}</td>
+                          <td>{drug.total_quantity ?? 0}</td>
+                          <td>{drug.active_batches ?? 0}</td>
                           <td className="actions-cell">
-                            <button className="secondary-btn compact" onClick={() => { setActiveModule("inventory"); setInventoryTab("batches"); setBatchDrugFilter(String(drug.drug_id)); }}>View Batches</button>
-                            <button className="secondary-btn compact" onClick={() => editDrug(drug)}>Edit Drug</button>
-                            <button className="danger-btn compact" onClick={() => disableDrug(drug)}>Disable Drug</button>
+                            <button className="secondary-btn compact" onClick={() => openDrugBatches(drug.drug_id)} disabled={!hasPermission("view_inventory")}>View Batches</button>
+                            <button className="secondary-btn compact" disabled title="Temporarily disabled">Edit Drug</button>
+                            <button className="danger-btn compact" disabled title="Temporarily disabled">Disable Drug</button>
                           </td>
                         </tr>
                       );

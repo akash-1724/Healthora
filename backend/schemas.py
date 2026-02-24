@@ -77,6 +77,7 @@ class PatientRead(BaseModel):
     contact: str | None = None
     dob: date | None = None
     created_by_user_id: int | None = None
+    created_by: str | None = None
     created_at: datetime
     is_archived: bool
 
@@ -106,6 +107,8 @@ class DrugRead(BaseModel):
     schedule_type: str | None = None
     is_active: bool
     low_stock_threshold: int
+    total_quantity: int = 0
+    active_batches: int = 0
 
 
 class DrugCreate(BaseModel):

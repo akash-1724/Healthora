@@ -1,4 +1,5 @@
 import os
+import random
 import zipfile
 from datetime import date, datetime, timedelta
 from xml.etree import ElementTree as ET
@@ -250,7 +251,26 @@ def seed_users(db: Session, his_data: dict[str, list[list[str]]]):
 
 
 def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
+    creator_usernames = ["cmo1", "sysadmin", "pm1", "senior1", "staff1", "clerk1"]
+    creators = db.query(User).filter(User.username.in_(creator_usernames)).order_by(User.user_id.asc()).all()
+    creator_ids = [user.user_id for user in creators]
+
+    def random_creator_sequence(total: int) -> list[int]:
+        if not creator_ids or total <= 0:
+            return []
+        sequence: list[int] = []
+        while len(sequence) < total:
+            sequence.extend(random.sample(creator_ids, len(creator_ids)))
+        return sequence[:total]
+
     if db.query(Patient).count() > 0:
+        existing_rows = db.query(Patient).order_by(Patient.patient_id.asc()).all()
+        existing_creator_ids = {row.created_by_user_id for row in existing_rows if row.created_by_user_id is not None}
+        if creator_ids and len(existing_creator_ids) <= 1:
+            randomized = random_creator_sequence(len(existing_rows))
+            for index, row in enumerate(existing_rows):
+                row.created_by_user_id = randomized[index]
+            db.commit()
         return
 
     patient_rows = his_data.get("Paitent", [])
@@ -264,13 +284,12 @@ def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
         ]
 
     limit = int(os.getenv("HIS_PATIENT_SEED_LIMIT", "300"))
-    creator = db.query(User).filter(User.username == "cmo1").first()
-    creator_id = creator.user_id if creator else None
-
     to_insert = []
+    randomized = random_creator_sequence(len(rows[:limit]))
     for row in rows[:limit]:
         if len(row) < 7:
             continue
+        creator_id = randomized[len(to_insert)] if randomized else None
         to_insert.append(
             Patient(
                 patient_id=int(float(row[0])),
