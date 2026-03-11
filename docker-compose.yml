@@ -19,11 +19,16 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://healthora_user:healthora_password@postgres:5432/healthora}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-healthora-secret-key}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-healthora-dev-secret-change-in-production-XXXXXXXXXXXXX}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-1440}
+      MAX_LOGIN_ATTEMPTS: ${MAX_LOGIN_ATTEMPTS:-5}
+      LOCKOUT_MINUTES: ${LOCKOUT_MINUTES:-15}
+      SYSADMIN_BOOTSTRAP_KEY: ${SYSADMIN_BOOTSTRAP_KEY:-}
       HIS_XLSX_PATH: /app/HIS (1).xlsx
       HIS_PATIENT_SEED_LIMIT: ${HIS_PATIENT_SEED_LIMIT:-300}
+      ENABLE_STARTUP_SEED: ${ENABLE_STARTUP_SEED:-true}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     depends_on:
       postgres:
         condition: service_healthy

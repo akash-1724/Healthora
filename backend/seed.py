@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from models import Drug, DrugBatch, Patient, Role, User
+from models import Drug, DrugBatch, Patient, Role, Supplier, User
 
 NS = {
     "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -82,7 +82,7 @@ def load_his_data() -> dict[str, list[list[str]]]:
         rel_map = {node.attrib["Id"]: node.attrib["Target"] for node in rels}
 
         output: dict[str, list[list[str]]] = {}
-        wanted = {"Department", "Role", "User ", "Paitent", "Drug", "Drug_Batch"}
+        wanted = {"Department", "Role", "User ", "Paitent", "Drug", "Drug_Batch", "Supplier"}
         sheets_node = workbook.find("m:sheets", NS)
         if sheets_node is None:
             return {}
@@ -298,6 +298,7 @@ def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
                 dob=excel_date_to_date(row[3]),
                 contact=row[5],
                 gender=row[6],
+                blood_group=row[7] if len(row) > 7 else None,
                 created_by_user_id=creator_id,
                 is_archived=False,
             )
@@ -336,6 +337,64 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]):
         )
         db.commit()
 
+
+def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
+    fallback = [
+        ("Global Pharma Distributors", "Anoop Mathew", "+91-98112-34567", "sales@globalpharma.in", "Kochi, Kerala"),
+        ("Medline Lifesciences", "Reshma Nair", "+91-98220-11446", "contact@medline.in", "Thrissur, Kerala"),
+        ("CarePlus Wholesale", "Javed Rahman", "+91-98730-22011", "hello@carepluswholesale.in", "Kozhikode, Kerala"),
+        ("Aster Drug Agencies", "Simi Joseph", "+91-99614-77880", "orders@asterdrug.in", "Ernakulam, Kerala"),
+        ("Nova Med Supply", "Arun George", "+91-98465-42220", "support@novamed.in", "Palakkad, Kerala"),
+        ("Prime Health Traders", "Priya S", "+91-98957-31009", "ops@primehealth.in", "Kannur, Kerala"),
+        ("Lifecare Therapeutics", "Nikhil Das", "+91-94471-22008", "info@lifecaretx.in", "Kottayam, Kerala"),
+        ("Unity Pharma Network", "Anita Roy", "+91-93882-11773", "connect@unitypharma.in", "Thiruvananthapuram, Kerala"),
+    ]
+
+    existing_suppliers = db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()
+    if existing_suppliers:
+        fallback_by_name = {name: (contact, phone, email, address) for name, contact, phone, email, address in fallback}
+        for supplier in existing_suppliers:
+            if supplier.name in fallback_by_name:
+                contact, phone, email, address = fallback_by_name[supplier.name]
+                supplier.contact_person = supplier.contact_person or contact
+                supplier.phone = supplier.phone or phone
+                supplier.email = supplier.email or email
+                supplier.address = supplier.address or address
+            supplier.is_active = True
+        db.commit()
+    else:
+        supplier_rows = his_data.get("Supplier", [])[1:]
+        suppliers_to_add: list[Supplier] = []
+
+        if supplier_rows:
+            for row in supplier_rows[:10]:
+                if len(row) < 2:
+                    continue
+                name = (row[1] or "").strip()
+                if not name:
+                    continue
+                contact_blob = (row[3] if len(row) > 3 else "") or ""
+                phone_guess = contact_blob.split("/")[0].strip() if contact_blob else None
+                suppliers_to_add.append(
+                    Supplier(
+                        name=name,
+                        contact_person=None,
+                        phone=phone_guess,
+                        email=None,
+                        address=None,
+                        is_active=True,
+                    )
+                )
+
+        if not suppliers_to_add:
+            suppliers_to_add = [
+                Supplier(name=n, contact_person=c, phone=p, email=e, address=a, is_active=True)
+                for n, c, p, e, a in fallback
+            ]
+
+        db.add_all(suppliers_to_add)
+        db.commit()
+
     if db.query(DrugBatch).count() == 0:
         batch_rows = his_data.get("Drug_Batch", [])[1:]
         if not batch_rows:
@@ -346,8 +405,12 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]):
                 ["13", "7", "B2025-013", "46327", "350.00", "525.00", "210"],
             ]
 
-        db.add_all(
-            [
+        supplier_ids = [s.supplier_id for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()]
+        prepared_batches = []
+        for idx, row in enumerate(batch_rows):
+            if len(row) < 7:
+                continue
+            prepared_batches.append(
                 DrugBatch(
                     batch_id=int(float(row[0])),
                     drug_id=int(float(row[1])),
@@ -356,13 +419,21 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]):
                     purchase_price=float(row[4]),
                     selling_price=float(row[5]),
                     quantity_available=int(float(row[6])),
+                    supplier_id=supplier_ids[idx % len(supplier_ids)] if supplier_ids else None,
                     is_expired=False,
                 )
-                for row in batch_rows
-                if len(row) >= 7
-            ]
-        )
+            )
+
+        db.add_all(prepared_batches)
         db.commit()
+
+    supplier_ids = [s.supplier_id for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()]
+    if supplier_ids:
+        batches_without_supplier = db.query(DrugBatch).filter(DrugBatch.supplier_id.is_(None)).order_by(DrugBatch.batch_id.asc()).all()
+        for idx, batch in enumerate(batches_without_supplier):
+            batch.supplier_id = supplier_ids[idx % len(supplier_ids)]
+        if batches_without_supplier:
+            db.commit()
 
 
 def sync_postgres_sequences(db: Session):
@@ -372,19 +443,30 @@ def sync_postgres_sequences(db: Session):
         ("patients", "patient_id"),
         ("drugs", "drug_id"),
         ("drug_batches", "batch_id"),
+        ("suppliers", "supplier_id"),
+        ("purchase_orders", "po_id"),
+        ("purchase_order_items", "item_id"),
+        ("prescriptions", "prescription_id"),
+        ("prescription_items", "item_id"),
+        ("dispensing_records", "record_id"),
+        ("audit_logs", "log_id"),
+        ("notifications", "notification_id"),
     ]
     for table_name, column_name in sequence_targets:
-        db.execute(
-            text(
-                f"""
-                SELECT setval(
-                    pg_get_serial_sequence('{table_name}', '{column_name}'),
-                    COALESCE((SELECT MAX({column_name}) FROM {table_name}), 1),
-                    (SELECT COUNT(*) > 0 FROM {table_name})
+        try:
+            db.execute(
+                text(
+                    f"""
+                    SELECT setval(
+                        pg_get_serial_sequence('{table_name}', '{column_name}'),
+                        COALESCE((SELECT MAX({column_name}) FROM {table_name}), 1),
+                        (SELECT COUNT(*) > 0 FROM {table_name})
+                    )
+                    """
                 )
-                """
             )
-        )
+        except Exception:
+            pass  # Table may not exist yet on first run before create_all
     db.commit()
 
 
@@ -393,5 +475,6 @@ def seed_all(db: Session):
     seed_roles(db, his_data)
     seed_users(db, his_data)
     seed_patients(db, his_data)
+    seed_suppliers(db, his_data)
     seed_drugs_and_batches(db, his_data)
     sync_postgres_sequences(db)

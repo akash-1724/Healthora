@@ -5,7 +5,21 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from database import Base
-from models import Drug, DrugBatch, Patient, Role, User
+from models import (  # noqa: F401 — import all models for alembic autogenerate
+    AuditLog,
+    DispensingRecord,
+    Drug,
+    DrugBatch,
+    Notification,
+    Patient,
+    Prescription,
+    PrescriptionItem,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    Role,
+    Supplier,
+    User,
+)
 
 config = context.config
 

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -5,6 +7,7 @@ from database import get_db
 from deps import get_current_user, require_permission
 from models import Role, User
 from schemas import PasswordResetRequest, RoleRead, UserCreate, UserRead, UserUpdate
+from security import hash_password
 
 router = APIRouter(prefix="/api", tags=["users"])
 
@@ -30,11 +33,19 @@ def to_user_read(user: User) -> UserRead:
     return UserRead(
         user_id=user.user_id,
         username=user.username,
+        full_name=user.full_name,
+        email=user.email,
+        phone=user.phone,
         role_id=user.role_id,
         role_name=user.role.name,
         role_display_name=user.role.display_name,
         department=user.department,
         is_active=user.is_active,
+        failed_login_count=user.failed_login_count,
+        locked_until=user.locked_until,
+        last_login_at=user.last_login_at,
+        password_changed_at=user.password_changed_at,
+        must_reset_password=user.must_reset_password,
         created_at=user.created_at,
     )
 
@@ -61,20 +72,25 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    if not payload.password or len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
     role = db.query(Role).filter(Role.id == payload.role_id).first()
     if not role:
         raise HTTPException(status_code=400, detail="Invalid role_id")
 
-    max_user = db.query(User.user_id).order_by(User.user_id.desc()).first()
-    next_user_id = (max_user[0] if max_user else 0) + 1
-
     new_user = User(
-        user_id=next_user_id,
         username=payload.username,
-        password=payload.password,
+        password=hash_password(payload.password),
+        full_name=payload.full_name,
+        email=payload.email,
+        phone=payload.phone,
         role_id=payload.role_id,
         department=payload.department,
         is_active=payload.is_active,
+        failed_login_count=0,
+        must_reset_password=False,
+        password_changed_at=datetime.utcnow(),
     )
     db.add(new_user)
     db.commit()
@@ -97,6 +113,14 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
         user.department = payload.department
     if payload.is_active is not None:
         user.is_active = payload.is_active
+    if payload.full_name is not None:
+        user.full_name = payload.full_name
+    if payload.email is not None:
+        user.email = payload.email
+    if payload.phone is not None:
+        user.phone = payload.phone
+    if payload.must_reset_password is not None:
+        user.must_reset_password = payload.must_reset_password
 
     db.commit()
     db.refresh(user)
@@ -119,7 +143,11 @@ def reset_password(user_id: int, payload: PasswordResetRequest, db: Session = De
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user.password = payload.password
+    if not payload.password or len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    user.password = hash_password(payload.password)
+    user.password_changed_at = datetime.utcnow()
+    user.must_reset_password = False
     db.commit()
     db.refresh(user)
     return to_user_read(user)
