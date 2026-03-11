@@ -1,0 +1,9 @@
+drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email
+Dolo 650,Paracetamol,Tablet,650mg,OTC,100,DL650-2026-001,2027-12-31,1.80,2.50,1200,Global Pharma Distributors,Anoop Mathew,+91-98112-34567,sales@globalpharma.in
+Dolo 650,Paracetamol,Tablet,650mg,OTC,100,DL650-2026-002,2028-02-28,1.85,2.55,980,Medline Lifesciences,Reshma Nair,+91-98220-11446,contact@medline.in
+Atorva 20,Atorvastatin,Tablet,20mg,Schedule H,80,AT20-2026-001,2027-10-15,6.25,9.40,450,CarePlus Wholesale,Javed Rahman,+91-98730-22011,hello@carepluswholesale.in
+Atorva 20,Atorvastatin,Tablet,20mg,Schedule H,80,AT20-2026-002,2028-01-15,6.30,9.60,520,Aster Drug Agencies,Simi Joseph,+91-99614-77880,orders@asterdrug.in
+Amoxil 500,Amoxicillin,Capsule,500mg,Schedule H,120,AMX500-2026-001,2027-11-30,3.20,4.90,760,Nova Med Supply,Arun George,+91-98465-42220,support@novamed.in
+Amoxil 500,Amoxicillin,Capsule,500mg,Schedule H,120,AMX500-2026-002,2028-03-31,3.15,4.85,640,Prime Health Traders,Priya S,+91-98957-31009,ops@primehealth.in
+Pantocid 40,Pantoprazole,Tablet,40mg,Schedule H,90,PAN40-2026-001,2027-09-30,2.40,3.75,890,Lifecare Therapeutics,Nikhil Das,+91-94471-22008,info@lifecaretx.in
+Augmentin 625,Amoxicillin + Clavulanate,Tablet,625mg,Schedule H,100,AUG625-2026-001,2027-08-31,9.50,13.90,410,Unity Pharma Network,Anita Roy,+91-93882-11773,connect@unitypharma.in

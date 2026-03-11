@@ -52,6 +52,8 @@ Users:
 Public:
 
 - `POST /api/login`
+- `GET /api/setup-status`
+- `POST /api/register-sysadmin` (one-time bootstrap only)
 
 Protected (Bearer token required):
 
@@ -78,8 +80,12 @@ Protected (Bearer token required):
 - `PUT /api/drugs/{drug_id}` (Pharmacy Manager only)
 - `PATCH /api/drugs/{drug_id}/disable` (Pharmacy Manager only)
 - `POST /api/drug-batches` (Pharmacy Manager + Senior Pharmacist)
+- `POST /api/drug-batches/bulk-upload` (CSV/XLSX upload for batch intake)
 - `PATCH /api/drug-batches/{batch_id}/mark-expired` (Pharmacy Manager + Senior Pharmacist)
 - `PUT /api/inventory/{batch_id}` (Manager/Senior/Staff/Clerk)
+
+Bulk upload required columns: `drug_name,batch_no,expiry_date,purchase_price,selling_price,quantity_available`.
+Optional columns: `generic_name,formulation,strength,schedule_type,low_stock_threshold,supplier_id,supplier_name`.
 - `GET /api/ai-report` (stub: `{"message": "Coming soon"}`)
 
 ## Frontend Routes

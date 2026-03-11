@@ -1,0 +1,5 @@
+drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email
+Cefix 200,Cefixime,Tablet,200mg,Schedule H,100,CEF200-CHK-3101,2028-02-28,8.20,12.40,520,CarePlus Wholesale,Javed Rahman,+91-98730-22011,hello@carepluswholesale.in
+Amikacin 500,Amikacin,Injection,500mg/2ml,Schedule H,60,AMK500-CHK-3102,2027-11-18,18.40,27.90,310,Aster Drug Agencies,Simi Joseph,+91-99614-77880,orders@asterdrug.in
+Levoflox 500,Levofloxacin,Tablet,500mg,Schedule H,90,LEV500-CHK-3103,2027-09-14,7.10,10.80,460,Nova Med Supply,Arun George,+91-98465-42220,support@novamed.in
+Doxy 100,Doxycycline,Capsule,100mg,Schedule H,85,DOX100-CHK-3104,2028-04-09,3.85,5.95,680,Prime Health Traders,Priya S,+91-98957-31009,ops@primehealth.in

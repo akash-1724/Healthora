@@ -1,0 +1,4 @@
+drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email
+Telma 40,Telmisartan,Tablet,40mg,Schedule H,120,TEL40-CHK-4201,2028-05-31,4.60,6.95,900,Lifecare Therapeutics,Nikhil Das,+91-94471-22008,info@lifecaretx.in
+Glycomet GP2,Metformin + Glimepiride,Tablet,500mg+2mg,Schedule H,140,GLYGP2-CHK-4202,2028-01-25,6.10,9.30,760,Medline Lifesciences,Reshma Nair,+91-98220-11446,contact@medline.in
+Rosuvas 10,Rosuvastatin,Tablet,10mg,Schedule H,95,ROS10-CHK-4203,2027-12-22,5.20,7.90,580,Global Pharma Distributors,Anoop Mathew,+91-98112-34567,sales@globalpharma.in

@@ -1,0 +1,5 @@
+drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email
+Azicure 250,Azithromycin,Tablet,250mg,Schedule H,80,AZI250-CHK-002,2028-03-31,5.40,7.80,320,Aster Drug Agencies,Simi Joseph,+91-99614-77880,orders@asterdrug.in
+Glycomet 500,Metformin,Tablet,500mg,Schedule H,140,GLY500-CHK-001,2027-12-10,1.95,2.90,1100,Nova Med Supply,Arun George,+91-98465-42220,support@novamed.in
+Levocet 5,Levocetirizine,Tablet,5mg,OTC,85,LEV5-CHK-004,2027-08-22,1.10,1.75,740,Prime Health Traders,Priya S,+91-98957-31009,ops@primehealth.in
+Rabecid D,Rabeprazole + Domperidone,Capsule,20mg+30mg,Schedule H,60,RBD-CHK-008,2028-04-19,4.65,6.90,410,Lifecare Therapeutics,Nikhil Das,+91-94471-22008,info@lifecaretx.in

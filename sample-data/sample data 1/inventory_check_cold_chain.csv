@@ -1,0 +1,4 @@
+drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email,supplier_address
+Actrapid,Insulin Human,Injection,100 IU/ml,Schedule H,40,ACTR-CHK-2001,2027-07-31,349.00,525.00,180,Medline Lifesciences,Reshma Nair,+91-98220-11446,contact@medline.in,"Thrissur, Kerala"
+Huminsulin R,Insulin Regular,Injection,100 IU/ml,Schedule H,35,HINS-CHK-2002,2027-10-15,365.00,548.00,140,Global Pharma Distributors,Anoop Mathew,+91-98112-34567,sales@globalpharma.in,"Kochi, Kerala"
+Tetanus Toxoid,Tetanus Toxoid,Injection,0.5 ml,Schedule H,30,TT-CHK-2003,2028-01-20,22.50,34.00,260,Unity Pharma Network,Anita Roy,+91-93882-11773,connect@unitypharma.in,"Thiruvananthapuram, Kerala"
