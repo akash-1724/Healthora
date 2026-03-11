@@ -1,6 +1,6 @@
 # File: `frontend/src/Dashboard.jsx`
 
-Role-based dashboard shell and module renderer.
+Role-based dashboard shell and module renderer styled with a bold Neo-brutalism aesthetic.
 
 - Left sidebar with modules filtered by backend role access.
 - Top header with user role and logout/home actions.

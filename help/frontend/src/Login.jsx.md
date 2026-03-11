@@ -1,6 +1,6 @@
 # File: `frontend/src/Login.jsx`
 
-Simple login page.
+Login page styled with a Neo-brutalism aesthetic.
 
 - Takes username and password.
 - Calls `POST /api/login`.

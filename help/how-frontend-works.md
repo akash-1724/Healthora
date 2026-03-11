@@ -1,7 +1,7 @@
 # How Frontend Works
 
 1. React starts from `frontend/src/App.jsx`.
-2. Landing page (`/`) shows project details + right-side login panel.
+2. Landing page (`/`) presents a full Neo-brutalism design with project details, team stats, and a login section at the bottom.
 3. Login supports Remember Me and stores JWT in localStorage or sessionStorage.
 4. `/dashboard` route is protected by token check.
 5. Dashboard loads role access modules from backend.
