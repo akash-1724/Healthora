@@ -26,7 +26,7 @@ Permission-driven actions:
 - `add_batch` shows Add Batch form.
 - `update_inventory` shows inventory quantity update form.
 - `add_patients` shows Add Patient form.
-- `view_ai_report` shows AI report stub message.
+- `view_ai_report` enables the AI report NL-to-SQL module.
 
 UI behavior:
 

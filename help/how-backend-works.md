@@ -36,3 +36,8 @@ Main endpoints:
 - `PUT /api/patients/{patient_id}`
 - `PATCH /api/patients/{patient_id}/archive`
 - `GET /api/ai-report`
+- `POST /api/ai-report/query`
+- `POST /api/ai-report/generate-report`
+- `GET /api/ai-report/{report_id}/preview`
+- `POST /api/ai-report/{report_id}/download`
+- `GET /api/ai-report/rag/stats`

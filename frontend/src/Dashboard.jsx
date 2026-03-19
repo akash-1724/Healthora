@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import AuditModule from "./AuditModule";
+import AIReportModule from "./AIReportModule";
 import DispensingModule from "./DispensingModule";
 import InventoryModule from "./InventoryModule";
 import PatientsModule from "./PatientsModule";
@@ -21,6 +22,7 @@ const NAV = [
   { key: "purchase_orders", label: "Purchase Orders", icon: "🛒" },
   { key: "users", label: "Users", icon: "👥" },
   { key: "audit", label: "Audit Log", icon: "🔍" },
+  { key: "ai_report", label: "AI Report", icon: "🤖" },
   { key: "settings", label: "Settings", icon: "⚙️" },
 ];
 
@@ -67,6 +69,7 @@ export default function Dashboard() {
     purchase_orders: "manage_inventory",
     users: "manage_users",
     audit: "view_audit_logs",
+    ai_report: "view_ai_report",
   };
 
   async function refreshDashboard() {
@@ -362,6 +365,7 @@ export default function Dashboard() {
         {active === "suppliers" && <SuppliersModule hasPermission={hasPermission} />}
         {active === "purchase_orders" && <PurchaseOrdersModule drugs={drugs} hasPermission={hasPermission} />}
         {active === "audit" && <AuditModule />}
+        {active === "ai_report" && <AIReportModule />}
         {active === "settings" && (
           <div className="section" style={{ margin: 24 }}>
             <div className="section-header"><h3>⚙️ Settings</h3></div>

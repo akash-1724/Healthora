@@ -17,7 +17,6 @@ Endpoints:
 - `PUT /api/patients/{patient_id}` (edit patient)
 - `PATCH /api/patients/{patient_id}/archive`
 - `GET /api/dashboard-summary`
-- `GET /api/ai-report` (stub)
 
 Behavior:
 
@@ -28,4 +27,4 @@ Behavior:
 
 Special note:
 
-- `/api/ai-report` intentionally returns `{ "message": "Coming soon" }`.
+- AI report routes were moved to dedicated router `backend/ai_report.py`.

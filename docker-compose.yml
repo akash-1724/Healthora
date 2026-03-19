@@ -16,7 +16,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://healthora_user:healthora_password@postgres:5432/healthora}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-healthora-dev-secret-change-in-production-XXXXXXXXXXXXX}
@@ -29,6 +31,11 @@ services:
       HIS_PATIENT_SEED_LIMIT: ${HIS_PATIENT_SEED_LIMIT:-300}
       ENABLE_STARTUP_SEED: ${ENABLE_STARTUP_SEED:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      AI_QUERY_MAX_ROWS: ${AI_QUERY_MAX_ROWS:-100}
+      AI_SQL_TIMEOUT_MS: ${AI_SQL_TIMEOUT_MS:-5000}
+      AI_RAG_THRESHOLD: ${AI_RAG_THRESHOLD:-0.9}
     depends_on:
       postgres:
         condition: service_healthy

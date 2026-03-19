@@ -82,9 +82,9 @@ ROLE_PERMISSIONS = {
 
 
 ROLE_MODULES = {
-    "system_admin": ["dashboard", "users", "patients", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "audit", "settings"],
-    "chief_medical_officer": ["dashboard", "patients", "drugs", "prescriptions", "dispensing"],
-    "pharmacy_manager": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders"],
+    "system_admin": ["dashboard", "users", "patients", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "audit", "ai_report", "settings"],
+    "chief_medical_officer": ["dashboard", "patients", "drugs", "prescriptions", "dispensing", "ai_report"],
+    "pharmacy_manager": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "ai_report"],
     "senior_pharmacist": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing"],
     "staff_pharmacist": ["dashboard", "drugs", "inventory", "dispensing"],
     "inventory_clerk": ["dashboard", "drugs", "inventory", "suppliers"],

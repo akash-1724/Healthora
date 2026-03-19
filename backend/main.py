@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from auth import router as auth_router
+from ai_report import router as ai_report_router
 from audit_router import router as audit_log_router
 from dashboard import router as dashboard_router
 from database import SessionLocal
@@ -111,3 +112,4 @@ app.include_router(suppliers_router)
 app.include_router(purchase_orders_router)
 app.include_router(notifications_router)
 app.include_router(audit_log_router)
+app.include_router(ai_report_router)

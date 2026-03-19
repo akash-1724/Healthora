@@ -86,7 +86,13 @@ Protected (Bearer token required):
 
 Bulk upload required columns: `drug_name,batch_no,expiry_date,purchase_price,selling_price,quantity_available`.
 Optional columns: `generic_name,formulation,strength,schedule_type,low_stock_threshold,supplier_id,supplier_name`.
-- `GET /api/ai-report` (stub: `{"message": "Coming soon"}`)
+- `GET /api/ai-report` (AI status + schema readiness)
+- `POST /api/ai-report/query` (natural language to SQL report)
+- `POST /api/ai-report/generate-report` (preview report with KPIs + charts + narrative)
+- `GET /api/ai-report/{report_id}/preview` (reload report preview)
+- `POST /api/ai-report/{report_id}/download` (download report as `pdf` or `csv`)
+- `GET /api/ai-report/rag/stats` (query cache stats)
+- `DELETE /api/ai-report/rag/clear` (admin only, clear AI cache)
 
 ## Frontend Routes
 
@@ -108,9 +114,9 @@ Current modules:
 
 ## RBAC Matrix
 
-- System Admin: Manage Users, View Dashboard, View Patients, View Drugs, View Inventory, AI report stub
-- CMO: View/Add Patients, View Dashboard, View Drugs, AI report stub
-- Pharmacy Manager: Dashboard, View/Add Drugs, Add Batch, Update Inventory, AI report stub
+- System Admin: Manage Users, View Dashboard, View Patients, View Drugs, View Inventory, AI report
+- CMO: View/Add Patients, View Dashboard, View Drugs, AI report
+- Pharmacy Manager: Dashboard, View/Add Drugs, Add Batch, Update Inventory, AI report
 - Senior Pharmacist: Dashboard, View Drugs, Add Batch, Update Inventory
 - Staff Pharmacist: Dashboard, View Drugs, Update Inventory
 - Inventory Clerk: Dashboard, View Drugs, Update Inventory

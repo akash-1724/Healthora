@@ -497,11 +497,6 @@ def archive_patient(patient_id: int, db: Session = Depends(get_db)):
     return to_patient_read(patient, creator.username if creator else None)
 
 
-@router.get("/ai-report", dependencies=[Depends(require_permission("view_ai_report"))])
-def ai_report_stub():
-    return {"message": "Coming soon"}
-
-
 def count_expiry_risk(batches: list[DrugBatch]) -> int:
     today = date.today()
     return sum(1 for row in batches if not row.is_expired and 0 <= (row.expiry_date - today).days <= 60)

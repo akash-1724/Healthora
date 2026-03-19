@@ -1,0 +1,7 @@
+.env
+env
+__pycache__/
+*.pyc
+rag_store.json
+.DS_Store
+.directory

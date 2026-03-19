@@ -26,6 +26,18 @@ async function requestForm(path, formData) {
   return data;
 }
 
+async function requestBlob(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json", ...authHeader(), ...(options.headers || {}) },
+    ...options,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Request failed");
+  }
+  return res.blob();
+}
+
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────
   login: (username, password) => request("/api/login", { method: "POST", body: JSON.stringify({ username, password }) }),
@@ -99,4 +111,12 @@ export const api = {
 
   // ── Audit Logs ────────────────────────────────────────────────────────
   getAuditLogs: (action) => request(`/api/audit-logs${action ? `?action=${action}` : ""}`),
+
+  // ── AI Report ─────────────────────────────────────────────────────────
+  aiReportStatus: () => request("/api/ai-report"),
+  aiReportQuery: (question) => request("/api/ai-report/query", { method: "POST", body: JSON.stringify({ question }) }),
+  aiGenerateReport: (question) => request("/api/ai-report/generate-report", { method: "POST", body: JSON.stringify({ question }) }),
+  aiReportPreview: (reportId) => request(`/api/ai-report/${reportId}/preview`),
+  aiDownloadReport: (reportId, format) => requestBlob(`/api/ai-report/${reportId}/download`, { method: "POST", body: JSON.stringify({ format }) }),
+  aiReportRagStats: () => request("/api/ai-report/rag/stats"),
 };

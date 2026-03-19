@@ -9,6 +9,6 @@ Small API helper for frontend.
   - dashboard data (`dashboardSummary`, `dashboardExpiry`, `dashboardNotifications`, `dashboardAccess`)
   - admin user management (`getUsers`, `createUser`, `getRoles`)
   - inventory/patient data (`getInventory`, `getPatients`)
-  - AI report stub (`aiReport`)
+- AI report (`aiReportStatus`, `aiReportQuery`, `aiReportRagStats`)
 
 This keeps page files short and clean.
