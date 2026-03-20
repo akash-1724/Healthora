@@ -1,13 +1,28 @@
 import os
 import random
 import zipfile
+import json
 from datetime import date, datetime, timedelta
 from xml.etree import ElementTree as ET
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from models import Drug, DrugBatch, Patient, Role, Supplier, User
+from models import (
+    AuditLog,
+    DispensingRecord,
+    Drug,
+    DrugBatch,
+    Notification,
+    Patient,
+    Prescription,
+    PrescriptionItem,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    Role,
+    Supplier,
+    User,
+)
 
 NS = {
     "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -337,6 +352,20 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]):
         )
         db.commit()
 
+    canonical_para = db.query(Drug).filter(Drug.drug_name == "Paracetamol").first()
+    if not canonical_para:
+        canonical_para = Drug(
+            drug_name="Paracetamol",
+            generic_name="Paracetamol",
+            formulation="Tablet",
+            strength="500mg",
+            schedule_type="OTC",
+            is_active=True,
+            low_stock_threshold=80,
+        )
+        db.add(canonical_para)
+        db.commit()
+
 
 def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
     fallback = [
@@ -436,6 +465,410 @@ def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
             db.commit()
 
 
+def _daterange_points(start_dt: datetime, end_dt: datetime, step_days: int) -> list[datetime]:
+    points: list[datetime] = []
+    current = start_dt
+    while current <= end_dt:
+        points.append(current)
+        current += timedelta(days=step_days)
+    return points
+
+
+def _ensure_batch_for_drug(db: Session, drug: Drug, supplier_id: int | None, ref_dt: datetime) -> DrugBatch:
+    batch = (
+        db.query(DrugBatch)
+        .filter(DrugBatch.drug_id == drug.drug_id)
+        .order_by(DrugBatch.expiry_date.desc())
+        .first()
+    )
+    if batch:
+        return batch
+
+    batch = DrugBatch(
+        drug_id=drug.drug_id,
+        batch_no=f"AUTO-{drug.drug_id}-{ref_dt.strftime('%Y%m%d%H%M%S')}",
+        expiry_date=(ref_dt + timedelta(days=540)).date(),
+        purchase_price=10.0,
+        selling_price=14.5,
+        quantity_available=500,
+        supplier_id=supplier_id,
+        is_expired=False,
+    )
+    db.add(batch)
+    db.flush()
+    return batch
+
+
+def seed_operational_history(db: Session):
+    start_dt = datetime(2024, 1, 1, 10, 0, 0)
+    end_dt = datetime(2025, 3, 5, 18, 0, 0)
+
+    random.seed(20240301)
+
+    users = db.query(User).order_by(User.user_id.asc()).all()
+    patients = db.query(Patient).order_by(Patient.patient_id.asc()).all()
+    drugs = db.query(Drug).filter(Drug.is_active.is_(True)).order_by(Drug.drug_id.asc()).all()
+    suppliers = db.query(Supplier).filter(Supplier.is_active.is_(True)).order_by(Supplier.supplier_id.asc()).all()
+
+    if not users or not patients or not drugs or not suppliers:
+        return
+
+    role_map = {user.user_id: (user.role.name if user.role else "") for user in users}
+    doctor_users = [u for u in users if role_map.get(u.user_id) in {"chief_medical_officer", "system_admin"}] or users[:]
+    pharmacy_users = [
+        u
+        for u in users
+        if role_map.get(u.user_id) in {"pharmacy_manager", "senior_pharmacist", "staff_pharmacist", "inventory_clerk"}
+    ] or users[:]
+
+    span_days = max(1, (end_dt - start_dt).days)
+    para_drug = db.query(Drug).filter(Drug.drug_name == "Paracetamol").first()
+    para_batch = None
+    if para_drug:
+        para_batch = _ensure_batch_for_drug(db, para_drug, suppliers[0].supplier_id, datetime(2024, 1, 1, 10, 0, 0))
+        if int(para_batch.quantity_available or 0) < 600:
+            para_batch.quantity_available = 900
+
+    for idx, supplier in enumerate(suppliers):
+        supplier.created_at = start_dt + timedelta(days=int((idx * span_days) / max(1, len(suppliers) - 1)))
+    for idx, patient in enumerate(patients):
+        patient.created_at = start_dt + timedelta(days=int((idx * span_days) / max(1, len(patients) - 1)))
+        if patient.created_by_user_id is None:
+            patient.created_by_user_id = random.choice(doctor_users).user_id
+    db.commit()
+
+    po_dates = _daterange_points(datetime(2024, 1, 7, 11, 0, 0), datetime(2025, 3, 5, 14, 0, 0), 9)
+    existing_po_days = {
+        row[0]
+        for row in db.execute(
+            text(
+                "SELECT DATE(created_at) FROM purchase_orders WHERE created_at >= :start_dt AND created_at <= :end_dt"
+            ),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+    }
+
+    for dt in po_dates:
+        if dt.date() in existing_po_days:
+            continue
+        supplier = random.choice(suppliers)
+        ordered_by = random.choice(pharmacy_users)
+        status = random.choices(["received", "pending", "cancelled"], weights=[75, 20, 5], k=1)[0]
+        received_at = dt + timedelta(days=random.randint(1, 4)) if status == "received" else None
+
+        po = PurchaseOrder(
+            supplier_id=supplier.supplier_id,
+            ordered_by_user_id=ordered_by.user_id,
+            status=status,
+            notes=f"Auto-seeded PO for {supplier.name}",
+            created_at=dt,
+            received_at=received_at,
+        )
+        db.add(po)
+        db.flush()
+
+        chosen_drugs = random.sample(drugs, k=min(random.randint(2, 4), len(drugs)))
+        for drug in chosen_drugs:
+            qty_ordered = random.randint(80, 260)
+            qty_received = qty_ordered if status == "received" else random.randint(0, max(1, qty_ordered // 3))
+            db.add(
+                PurchaseOrderItem(
+                    po_id=po.po_id,
+                    drug_id=drug.drug_id,
+                    quantity_ordered=qty_ordered,
+                    quantity_received=qty_received,
+                    unit_price=round(random.uniform(8.0, 55.0), 2),
+                )
+            )
+            if qty_received > 0:
+                batch = _ensure_batch_for_drug(db, drug, supplier.supplier_id, dt)
+                batch.quantity_available = max(0, int(batch.quantity_available or 0)) + qty_received
+
+    db.commit()
+
+    if (
+        db.execute(text("SELECT COUNT(*) FROM purchase_orders WHERE DATE(created_at)=DATE '2025-03-05'"))
+        .scalar_one()
+        == 0
+    ):
+        supplier = random.choice(suppliers)
+        ordered_by = random.choice(pharmacy_users)
+        po = PurchaseOrder(
+            supplier_id=supplier.supplier_id,
+            ordered_by_user_id=ordered_by.user_id,
+            status="received",
+            notes="Auto-seeded PO closing date",
+            created_at=datetime(2025, 3, 5, 13, 0, 0),
+            received_at=datetime(2025, 3, 5, 17, 0, 0),
+        )
+        db.add(po)
+        db.flush()
+        for drug in random.sample(drugs, k=min(3, len(drugs))):
+            qty = random.randint(100, 220)
+            db.add(
+                PurchaseOrderItem(
+                    po_id=po.po_id,
+                    drug_id=drug.drug_id,
+                    quantity_ordered=qty,
+                    quantity_received=qty,
+                    unit_price=round(random.uniform(8.0, 55.0), 2),
+                )
+            )
+        db.commit()
+
+    rx_dates = _daterange_points(datetime(2024, 1, 3, 9, 30, 0), datetime(2025, 3, 5, 17, 30, 0), 4)
+    existing_rx_days = {
+        row[0]
+        for row in db.execute(
+            text("SELECT DATE(created_at) FROM prescriptions WHERE created_at >= :start_dt AND created_at <= :end_dt"),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+    }
+
+    for dt in rx_dates:
+        if dt.date() in existing_rx_days:
+            continue
+        patient = random.choice(patients)
+        doctor = random.choice(doctor_users)
+        status = random.choices(["dispensed", "open", "cancelled"], weights=[78, 18, 4], k=1)[0]
+
+        prescription = Prescription(
+            patient_id=patient.patient_id,
+            doctor_name=doctor.full_name or doctor.username,
+            diagnosis=random.choice(["Fever", "Viral infection", "Pain", "Hypertension follow-up", "Diabetes follow-up"]),
+            notes="Auto-seeded clinical record",
+            status=status,
+            created_by_user_id=doctor.user_id,
+            created_at=dt,
+        )
+        db.add(prescription)
+        db.flush()
+
+        chosen_drugs = random.sample(drugs, k=min(random.randint(1, 3), len(drugs)))
+        for drug in chosen_drugs:
+            qty_prescribed = random.randint(6, 30)
+            db.add(
+                PrescriptionItem(
+                    prescription_id=prescription.prescription_id,
+                    drug_id=drug.drug_id,
+                    dosage=random.choice(["1-0-1", "1-1-1", "0-1-1", "1-0-0"]),
+                    duration=random.choice(["5 days", "7 days", "10 days", "14 days"]),
+                    quantity_prescribed=qty_prescribed,
+                )
+            )
+
+            if status != "dispensed":
+                continue
+
+            batch = (
+                db.query(DrugBatch)
+                .filter(DrugBatch.drug_id == drug.drug_id)
+                .order_by(DrugBatch.expiry_date.asc())
+                .first()
+            )
+            if not batch:
+                batch = _ensure_batch_for_drug(db, drug, random.choice(suppliers).supplier_id, dt)
+
+            available = int(batch.quantity_available or 0)
+            if available <= 0:
+                batch.quantity_available = random.randint(120, 260)
+                available = int(batch.quantity_available)
+
+            qty_dispensed = min(qty_prescribed, max(1, random.randint(4, 24)), available)
+            batch.quantity_available = max(0, available - qty_dispensed)
+
+            db.add(
+                DispensingRecord(
+                    prescription_id=prescription.prescription_id,
+                    patient_id=patient.patient_id,
+                    batch_id=batch.batch_id,
+                    quantity_dispensed=qty_dispensed,
+                    dispensed_by_user_id=random.choice(pharmacy_users).user_id,
+                    dispensed_at=dt + timedelta(hours=random.randint(1, 6)),
+                    notes="Auto-seeded dispensing record",
+                )
+            )
+
+    db.commit()
+
+    if (
+        db.execute(text("SELECT COUNT(*) FROM prescriptions WHERE DATE(created_at)=DATE '2025-03-05'"))
+        .scalar_one()
+        == 0
+    ):
+        patient = random.choice(patients)
+        doctor = random.choice(doctor_users)
+        dt = datetime(2025, 3, 5, 11, 45, 0)
+        prescription = Prescription(
+            patient_id=patient.patient_id,
+            doctor_name=doctor.full_name or doctor.username,
+            diagnosis="Seasonal fever",
+            notes="Auto-seeded closing date prescription",
+            status="dispensed",
+            created_by_user_id=doctor.user_id,
+            created_at=dt,
+        )
+        db.add(prescription)
+        db.flush()
+        drug = random.choice(drugs)
+        qty = random.randint(10, 24)
+        db.add(
+            PrescriptionItem(
+                prescription_id=prescription.prescription_id,
+                drug_id=drug.drug_id,
+                dosage="1-0-1",
+                duration="7 days",
+                quantity_prescribed=qty,
+            )
+        )
+        batch = _ensure_batch_for_drug(db, drug, random.choice(suppliers).supplier_id, dt)
+        available = int(batch.quantity_available or 0)
+        if available < qty:
+            batch.quantity_available = qty + 80
+            available = int(batch.quantity_available)
+        batch.quantity_available = max(0, available - qty)
+        db.add(
+            DispensingRecord(
+                prescription_id=prescription.prescription_id,
+                patient_id=patient.patient_id,
+                batch_id=batch.batch_id,
+                quantity_dispensed=qty,
+                dispensed_by_user_id=random.choice(pharmacy_users).user_id,
+                dispensed_at=datetime(2025, 3, 5, 15, 10, 0),
+                notes="Auto-seeded closing date dispensing",
+            )
+        )
+        db.commit()
+
+    if para_drug and para_batch:
+        para_sales_count = db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM dispensing_records dr
+                JOIN drug_batches db ON db.batch_id = dr.batch_id
+                JOIN drugs d ON d.drug_id = db.drug_id
+                WHERE d.drug_name = 'Paracetamol'
+                  AND EXTRACT(YEAR FROM dr.dispensed_at) = 2024
+                """
+            )
+        ).scalar_one()
+
+        if para_sales_count < 12:
+            for month in range(1, 13):
+                dt = datetime(2024, month, 10, 11, 0, 0)
+                patient = random.choice(patients)
+                doctor = random.choice(doctor_users)
+                dispensed_by = random.choice(pharmacy_users)
+                qty = random.randint(8, 20)
+
+                prescription = Prescription(
+                    patient_id=patient.patient_id,
+                    doctor_name=doctor.full_name or doctor.username,
+                    diagnosis="Fever",
+                    notes="Auto-seeded Paracetamol monthly sales",
+                    status="dispensed",
+                    created_by_user_id=doctor.user_id,
+                    created_at=dt,
+                )
+                db.add(prescription)
+                db.flush()
+
+                db.add(
+                    PrescriptionItem(
+                        prescription_id=prescription.prescription_id,
+                        drug_id=para_drug.drug_id,
+                        dosage="1-0-1",
+                        duration="5 days",
+                        quantity_prescribed=qty,
+                    )
+                )
+
+                available = int(para_batch.quantity_available or 0)
+                if available < qty:
+                    para_batch.quantity_available = qty + 500
+                    available = int(para_batch.quantity_available)
+                para_batch.quantity_available = max(0, available - qty)
+
+                db.add(
+                    DispensingRecord(
+                        prescription_id=prescription.prescription_id,
+                        patient_id=patient.patient_id,
+                        batch_id=para_batch.batch_id,
+                        quantity_dispensed=qty,
+                        dispensed_by_user_id=dispensed_by.user_id,
+                        dispensed_at=dt + timedelta(hours=2),
+                        notes="Auto-seeded monthly paracetamol sale",
+                    )
+                )
+            db.commit()
+
+    actions = [
+        "create_purchase_order",
+        "receive_purchase_order",
+        "create_prescription",
+        "dispense_drug",
+        "update_inventory",
+    ]
+    log_dates = _daterange_points(datetime(2024, 1, 2, 8, 0, 0), datetime(2025, 3, 5, 20, 0, 0), 3)
+    existing_log_days = {
+        row[0]
+        for row in db.execute(
+            text("SELECT DATE(timestamp) FROM audit_logs WHERE timestamp >= :start_dt AND timestamp <= :end_dt"),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+    }
+    for dt in log_dates:
+        if dt.date() in existing_log_days:
+            continue
+        actor = random.choice(users)
+        action = random.choice(actions)
+        target_table = random.choice(["purchase_orders", "prescriptions", "dispensing_records", "drug_batches"])
+        db.add(
+            AuditLog(
+                actor_user_id=actor.user_id,
+                action=action,
+                target_table=target_table,
+                target_id=str(random.randint(1, 5000)),
+                detail=json.dumps({"seeded": True, "action": action}),
+                ip_address="127.0.0.1",
+                timestamp=dt,
+            )
+        )
+    db.commit()
+
+    note_dates = _daterange_points(datetime(2024, 1, 5, 10, 30, 0), datetime(2025, 3, 5, 16, 30, 0), 6)
+    note_dates.append(datetime(2025, 3, 5, 16, 30, 0))
+    titles = [
+        "Low stock warning",
+        "Batch nearing expiry",
+        "Daily dispensing summary",
+        "Purchase order update",
+    ]
+    existing_note_days = {
+        row[0]
+        for row in db.execute(
+            text("SELECT DATE(created_at) FROM notifications WHERE created_at >= :start_dt AND created_at <= :end_dt"),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+    }
+    for dt in note_dates:
+        if dt.date() in existing_note_days:
+            continue
+        recipient = random.choice(users)
+        title = random.choice(titles)
+        db.add(
+            Notification(
+                recipient_user_id=recipient.user_id,
+                title=title,
+                message=f"Auto-seeded notification: {title.lower()}.",
+                is_read=dt < datetime(2024, 11, 1, 0, 0, 0),
+                created_at=dt,
+            )
+        )
+    db.commit()
+
+
 def sync_postgres_sequences(db: Session):
     sequence_targets = [
         ("roles", "id"),
@@ -477,4 +910,5 @@ def seed_all(db: Session):
     seed_patients(db, his_data)
     seed_suppliers(db, his_data)
     seed_drugs_and_batches(db, his_data)
+    seed_operational_history(db)
     sync_postgres_sequences(db)

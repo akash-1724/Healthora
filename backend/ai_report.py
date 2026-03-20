@@ -1,16 +1,12 @@
 import csv
 import json
-import os
-import sys
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from statistics import mean
 from typing import Any
-from urllib.parse import urlparse
 from uuid import uuid4
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -18,36 +14,11 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
+from ai_nl2sql import build_graph, clear_store, execute_with_retry, generate_sql, get_rag_stats, introspect_database, load_store, run_pipeline
 from audit import log_action
 from database import get_db
 from deps import get_current_user, require_permission
 from models import User
-
-_HERE = Path(__file__).resolve().parent
-_ROOT = _HERE.parent
-_CANDIDATES = [
-    _ROOT / "nl_to_sql1" / "backend",
-    _HERE / "nl_to_sql1" / "backend",
-    Path("/app/nl_to_sql1/backend"),
-]
-
-NL_TO_SQL_BACKEND = next((path for path in _CANDIDATES if path.exists()), _CANDIDATES[0])
-_ENV_CANDIDATES = [NL_TO_SQL_BACKEND.parent / ".env", NL_TO_SQL_BACKEND.parent / "env"]
-NL_TO_SQL_ENV = next((path for path in _ENV_CANDIDATES if path.exists()), _ENV_CANDIDATES[0])
-
-if NL_TO_SQL_ENV.exists():
-    load_dotenv(dotenv_path=NL_TO_SQL_ENV, override=True)
-
-if str(NL_TO_SQL_BACKEND) not in sys.path:
-    sys.path.insert(0, str(NL_TO_SQL_BACKEND))
-
-_introspect_database = None
-_build_graph = None
-_run_pipeline = None
-_load_store = None
-_clear_store = None
-_execute_with_retry = None
-_generate_sql = None
 
 router = APIRouter(prefix="/api/ai-report", tags=["ai-report"])
 
@@ -76,74 +47,21 @@ class QueryResponse(BaseModel):
     cached: bool = False
 
 
-def _ensure_loaded() -> tuple[dict, dict]:
+def _ensure_loaded() -> tuple[dict, object]:
     global _SCHEMA, _GRAPH
-    _load_nl_to_sql_modules()
-    assert _introspect_database is not None
-    assert _build_graph is not None
     if _SCHEMA is None:
-        _apply_db_env_from_database_url()
-        _SCHEMA = _introspect_database(
-            host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-        )
-        _GRAPH = _build_graph(_SCHEMA)
+        _SCHEMA = introspect_database()
+        _GRAPH = build_graph(_SCHEMA)
     assert _SCHEMA is not None
     assert _GRAPH is not None
     return _SCHEMA, _GRAPH
 
 
-def _apply_db_env_from_database_url() -> None:
-    database_url = os.getenv("DATABASE_URL", "")
-    if not database_url:
-        return
-
-    normalized = database_url.replace("postgresql+psycopg2://", "postgresql://")
-    parsed = urlparse(normalized)
-
-    if parsed.hostname:
-        os.environ["DB_HOST"] = parsed.hostname
-    if parsed.port:
-        os.environ["DB_PORT"] = str(parsed.port)
-    if parsed.path and len(parsed.path) > 1:
-        os.environ["DB_NAME"] = parsed.path.lstrip("/")
-    if parsed.username:
-        os.environ["DB_USER"] = parsed.username
-    if parsed.password:
-        os.environ["DB_PASSWORD"] = parsed.password
-
-
 def _is_cached(question: str, sql: str) -> bool:
-    _load_nl_to_sql_modules()
-    assert _load_store is not None
-    for entry in _load_store():
+    for entry in load_store():
         if entry.get("query", "").lower() == question.lower() and entry.get("sql") == sql:
             return True
     return False
-
-
-def _load_nl_to_sql_modules() -> None:
-    global _introspect_database, _build_graph, _run_pipeline, _load_store, _clear_store, _execute_with_retry, _generate_sql
-    if _introspect_database is not None:
-        return
-
-    from db_introspection import introspect_database
-    from graph_builder import build_graph
-    from pipeline import run_pipeline
-    from rag import clear_store, load_store
-    from sql_executor import execute_with_retry
-    from sql_generator import generate_sql
-
-    _introspect_database = introspect_database
-    _build_graph = build_graph
-    _run_pipeline = run_pipeline
-    _load_store = load_store
-    _clear_store = clear_store
-    _execute_with_retry = execute_with_retry
-    _generate_sql = generate_sql
 
 
 def _json_safe(value):
@@ -441,15 +359,19 @@ def ai_report_query(payload: QueryRequest, db: Session = Depends(get_db), curren
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
     schema, graph = _ensure_loaded()
-    assert _run_pipeline is not None
-    assert _generate_sql is not None
-    assert _execute_with_retry is not None
-    best_path = _run_pipeline(question, schema, graph)
+    best_path = run_pipeline(question, schema, graph)
     if not best_path:
         raise HTTPException(status_code=422, detail="Could not map this question to database tables")
-    sql = _generate_sql(question, best_path, schema, graph)
-    cached = _is_cached(question, sql)
-    result = _execute_with_retry(question, sql, schema, best_path)
+
+    try:
+        sql = generate_sql(question, best_path, schema, graph)
+        cached = _is_cached(question, sql)
+        result = execute_with_retry(db, question, sql, schema, best_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI query failed: {exc}") from exc
+
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result["error"])
 
@@ -480,15 +402,19 @@ def generate_report(payload: QueryRequest, db: Session = Depends(get_db), curren
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
     schema, graph = _ensure_loaded()
-    assert _run_pipeline is not None
-    assert _generate_sql is not None
-    assert _execute_with_retry is not None
-    best_path = _run_pipeline(question, schema, graph)
+    best_path = run_pipeline(question, schema, graph)
     if not best_path:
         raise HTTPException(status_code=422, detail="Could not map this question to database tables")
-    sql = _generate_sql(question, best_path, schema, graph)
-    cached = _is_cached(question, sql)
-    result = _execute_with_retry(question, sql, schema, best_path)
+
+    try:
+        sql = generate_sql(question, best_path, schema, graph)
+        cached = _is_cached(question, sql)
+        result = execute_with_retry(db, question, sql, schema, best_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI report generation failed: {exc}") from exc
+
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result["error"])
 
@@ -544,27 +470,10 @@ def download_report(report_id: str, payload: DownloadRequest, db: Session = Depe
 
 @router.get("/rag/stats", dependencies=[Depends(require_permission("view_ai_report"))])
 def ai_rag_stats():
-    _load_nl_to_sql_modules()
-    assert _load_store is not None
-    store = _load_store()
-    return {
-        "total": len(store),
-        "entries": [
-            {
-                "query": entry.get("query"),
-                "path": entry.get("best_path", {}).get("path", []),
-                "use_count": entry.get("use_count", 1),
-                "result_count": entry.get("result_count", 0),
-                "saved_at": entry.get("saved_at"),
-            }
-            for entry in store
-        ],
-    }
+    return get_rag_stats()
 
 
 @router.delete("/rag/clear", dependencies=[Depends(require_permission("manage_users"))])
 def ai_rag_clear():
-    _load_nl_to_sql_modules()
-    assert _clear_store is not None
-    _clear_store()
+    clear_store()
     return {"message": "RAG store cleared"}
