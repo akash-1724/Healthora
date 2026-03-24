@@ -55,9 +55,15 @@ def auto_expire_batches():
 async def lifespan(app: FastAPI):
     # Startup
     if os.getenv("ENABLE_STARTUP_SEED", "true").lower() == "true":
+        seed_fail_open = os.getenv("SEED_FAIL_OPEN", "true").lower() == "true"
         db = SessionLocal()
         try:
             seed_all(db)
+        except Exception:
+            logger.exception("Startup seeding failed")
+            if not seed_fail_open:
+                raise
+            logger.warning("Continuing startup because SEED_FAIL_OPEN=true")
         finally:
             db.close()
 

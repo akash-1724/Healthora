@@ -2,6 +2,7 @@ import os
 import random
 import zipfile
 import json
+import logging
 from datetime import date, datetime, timedelta
 from xml.etree import ElementTree as ET
 
@@ -46,6 +47,50 @@ ROLE_LABEL_TO_CODE = {
     "Staff Pharmacist": "staff_pharmacist",
     "Inventory Clerk": "inventory_clerk",
 }
+
+logger = logging.getLogger("healthora.seed")
+
+FALLBACK_DRUG_ROWS = [
+    ["1", "Aspirin Ecosprin", "Acetylsalicylic Acid", "Tablet", "75mg", "OTC", "1"],
+    ["2", "Atorva-20", "Atorvastatin", "Tablet", "20mg", "Schedule H", "3"],
+    ["6", "Dolo 650", "Paracetamol", "Tablet", "650mg", "OTC", "1"],
+    ["7", "Actrapid", "Insulin (Human)", "Injection", "100 IU/ml", "Schedule H", "6"],
+]
+
+FALLBACK_BATCH_ROWS = [
+    ["1", "1", "B2025-001", "46096", "1.25", "1.75", "850"],
+    ["3", "2", "B2025-003", "46235", "6.5", "9.75", "380"],
+    ["11", "6", "B2025-011", "46154", "1.8", "2.52", "780"],
+    ["13", "7", "B2025-013", "46327", "350.00", "525.00", "210"],
+]
+
+
+def _normalize_key(value: str | None) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _safe_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def excel_date_to_date(value: str | None) -> date | None:
@@ -323,34 +368,108 @@ def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
         db.commit()
 
 
-def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]):
-    if db.query(Drug).count() == 0:
-        drug_rows = his_data.get("Drug", [])[1:]
-        if not drug_rows:
-            drug_rows = [
-                ["1", "Aspirin Ecosprin", "Acetylsalicylic Acid", "Tablet", "75mg", "OTC", "1"],
-                ["2", "Atorva-20", "Atorvastatin", "Tablet", "20mg", "Schedule H", "3"],
-                ["6", "Dolo 650", "Paracetamol", "Tablet", "650mg", "OTC", "1"],
-                ["7", "Actrapid", "Insulin (Human)", "Injection", "100 IU/ml", "Schedule H", "6"],
-            ]
+def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]) -> dict[int, int]:
+    """
+    Ensure core drugs exist in an idempotent way and return a source-id -> drug_id map.
 
-        db.add_all(
-            [
-                Drug(
-                    drug_id=int(float(row[0])),
-                    drug_name=row[1],
-                    generic_name=row[2],
-                    formulation=row[3],
-                    strength=row[4],
-                    schedule_type=row[5],
-                    is_active=True,
-                    low_stock_threshold=50,
-                )
-                for row in drug_rows
-                if len(row) >= 6
-            ]
+    We resolve by business key first (name/generic), not by assuming fixed numeric IDs.
+    """
+    source_to_drug_id: dict[int, int] = {}
+
+    existing_drugs = db.query(Drug).order_by(Drug.drug_id.asc()).all()
+    by_id: dict[int, Drug] = {}
+    by_name: dict[str, Drug] = {}
+    by_generic: dict[str, Drug] = {}
+
+    def register(drug: Drug):
+        by_id[drug.drug_id] = drug
+        name_key = _normalize_key(drug.drug_name)
+        generic_key = _normalize_key(drug.generic_name)
+        if name_key and name_key not in by_name:
+            by_name[name_key] = drug
+        if generic_key and generic_key not in by_generic:
+            by_generic[generic_key] = drug
+
+    for existing in existing_drugs:
+        register(existing)
+
+    def ensure_drug(
+        source_id: int | None,
+        drug_name: str | None,
+        generic_name: str | None,
+        formulation: str | None,
+        strength: str | None,
+        schedule_type: str | None,
+        threshold: int = 50,
+    ) -> Drug:
+        name_key = _normalize_key(drug_name)
+        generic_key = _normalize_key(generic_name)
+
+        candidate = None
+        if name_key:
+            candidate = by_name.get(name_key)
+        if candidate is None and generic_key:
+            candidate = by_generic.get(generic_key)
+        if candidate is None and source_id is not None:
+            candidate = by_id.get(source_id)
+
+        if candidate is None:
+            candidate = Drug(
+                drug_name=(drug_name or generic_name or "Unnamed Drug").strip(),
+                generic_name=(generic_name or "").strip() or None,
+                formulation=(formulation or "").strip() or None,
+                strength=(strength or "").strip() or None,
+                schedule_type=(schedule_type or "").strip() or None,
+                is_active=True,
+                low_stock_threshold=max(1, threshold),
+            )
+            db.add(candidate)
+            db.flush()
+            register(candidate)
+        else:
+            if not candidate.generic_name and generic_name:
+                candidate.generic_name = generic_name.strip()
+            if not candidate.formulation and formulation:
+                candidate.formulation = formulation.strip()
+            if not candidate.strength and strength:
+                candidate.strength = strength.strip()
+            if not candidate.schedule_type and schedule_type:
+                candidate.schedule_type = schedule_type.strip()
+            if not candidate.low_stock_threshold or int(candidate.low_stock_threshold) <= 0:
+                candidate.low_stock_threshold = max(1, threshold)
+            candidate.is_active = True
+
+        if source_id is not None:
+            source_to_drug_id[source_id] = candidate.drug_id
+        return candidate
+
+    drug_rows = his_data.get("Drug", [])[1:]
+    for row in drug_rows:
+        if len(row) < 6:
+            continue
+        source_id = _safe_int(row[0])
+        ensure_drug(
+            source_id=source_id,
+            drug_name=(row[1] or "").strip(),
+            generic_name=(row[2] or "").strip(),
+            formulation=(row[3] or "").strip(),
+            strength=(row[4] or "").strip(),
+            schedule_type=(row[5] or "").strip(),
+            threshold=50,
         )
-        db.commit()
+
+    for row in FALLBACK_DRUG_ROWS:
+        source_id = _safe_int(row[0])
+        threshold = 80 if _normalize_key(row[1]) == "paracetamol" else 50
+        ensure_drug(
+            source_id=source_id,
+            drug_name=(row[1] or "").strip(),
+            generic_name=(row[2] or "").strip(),
+            formulation=(row[3] or "").strip(),
+            strength=(row[4] or "").strip(),
+            schedule_type=(row[5] or "").strip(),
+            threshold=threshold,
+        )
 
     canonical_para = db.query(Drug).filter(Drug.drug_name == "Paracetamol").first()
     if not canonical_para:
@@ -364,7 +483,87 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]):
             low_stock_threshold=80,
         )
         db.add(canonical_para)
+        db.flush()
+
+    db.commit()
+    return source_to_drug_id
+
+
+def seed_drug_batches(db: Session, his_data: dict[str, list[list[str]]], source_to_drug_id: dict[int, int]):
+    supplier_ids = [s.supplier_id for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()]
+    if not supplier_ids:
+        logger.warning("Skipping drug batch seed because no suppliers exist")
+        return
+
+    existing_batches = {batch.batch_no: batch for batch in db.query(DrugBatch).order_by(DrugBatch.batch_id.asc()).all()}
+    valid_drug_ids = {row[0] for row in db.query(Drug.drug_id).all()}
+
+    batch_rows = his_data.get("Drug_Batch", [])[1:] or FALLBACK_BATCH_ROWS
+
+    skipped_rows = 0
+    try:
+        for idx, row in enumerate(batch_rows):
+            if len(row) < 7:
+                skipped_rows += 1
+                continue
+
+            source_drug_id = _safe_int(row[1])
+            mapped_drug_id = source_to_drug_id.get(source_drug_id) if source_drug_id is not None else None
+            if mapped_drug_id is None and source_drug_id in valid_drug_ids:
+                mapped_drug_id = source_drug_id
+
+            if mapped_drug_id not in valid_drug_ids:
+                skipped_rows += 1
+                continue
+
+            batch_no = (row[2] or "").strip() or f"AUTO-BATCH-{mapped_drug_id}-{idx + 1}"
+            expiry_date = excel_date_to_date(row[3]) or (date.today() + timedelta(days=365))
+            purchase_price = _safe_float(row[4]) or 1.0
+            selling_price = _safe_float(row[5]) or max(1.0, round(purchase_price * 1.2, 2))
+            quantity_available = _safe_int(row[6])
+            if quantity_available is None:
+                quantity_available = 0
+
+            supplier_id = supplier_ids[idx % len(supplier_ids)]
+            existing = existing_batches.get(batch_no)
+            if existing:
+                existing.drug_id = mapped_drug_id
+                existing.supplier_id = existing.supplier_id or supplier_id
+                if existing.expiry_date is None:
+                    existing.expiry_date = expiry_date
+                if existing.purchase_price is None:
+                    existing.purchase_price = purchase_price
+                if existing.selling_price is None:
+                    existing.selling_price = selling_price
+                if existing.quantity_available is None:
+                    existing.quantity_available = quantity_available
+            else:
+                new_batch = DrugBatch(
+                    drug_id=mapped_drug_id,
+                    batch_no=batch_no,
+                    expiry_date=expiry_date,
+                    purchase_price=purchase_price,
+                    selling_price=selling_price,
+                    quantity_available=quantity_available,
+                    supplier_id=supplier_id,
+                    is_expired=False,
+                )
+                db.add(new_batch)
+                existing_batches[batch_no] = new_batch
+
+        batches_without_supplier = (
+            db.query(DrugBatch).filter(DrugBatch.supplier_id.is_(None)).order_by(DrugBatch.batch_id.asc()).all()
+        )
+        for idx, batch in enumerate(batches_without_supplier):
+            batch.supplier_id = supplier_ids[idx % len(supplier_ids)]
+
         db.commit()
+        if skipped_rows:
+            logger.warning("Skipped %d drug batch rows due to invalid/missing drug mapping", skipped_rows)
+    except Exception:
+        db.rollback()
+        logger.exception("Drug batch seeding failed; rolled back pending batch changes")
+        raise
 
 
 def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
@@ -423,47 +622,6 @@ def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
 
         db.add_all(suppliers_to_add)
         db.commit()
-
-    if db.query(DrugBatch).count() == 0:
-        batch_rows = his_data.get("Drug_Batch", [])[1:]
-        if not batch_rows:
-            batch_rows = [
-                ["1", "1", "B2025-001", "46096", "1.25", "1.75", "850"],
-                ["3", "2", "B2025-003", "46235", "6.5", "9.75", "380"],
-                ["11", "6", "B2025-011", "46154", "1.8", "2.52", "780"],
-                ["13", "7", "B2025-013", "46327", "350.00", "525.00", "210"],
-            ]
-
-        supplier_ids = [s.supplier_id for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()]
-        prepared_batches = []
-        for idx, row in enumerate(batch_rows):
-            if len(row) < 7:
-                continue
-            prepared_batches.append(
-                DrugBatch(
-                    batch_id=int(float(row[0])),
-                    drug_id=int(float(row[1])),
-                    batch_no=row[2],
-                    expiry_date=excel_date_to_date(row[3]) or date.today(),
-                    purchase_price=float(row[4]),
-                    selling_price=float(row[5]),
-                    quantity_available=int(float(row[6])),
-                    supplier_id=supplier_ids[idx % len(supplier_ids)] if supplier_ids else None,
-                    is_expired=False,
-                )
-            )
-
-        db.add_all(prepared_batches)
-        db.commit()
-
-    supplier_ids = [s.supplier_id for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()]
-    if supplier_ids:
-        batches_without_supplier = db.query(DrugBatch).filter(DrugBatch.supplier_id.is_(None)).order_by(DrugBatch.batch_id.asc()).all()
-        for idx, batch in enumerate(batches_without_supplier):
-            batch.supplier_id = supplier_ids[idx % len(supplier_ids)]
-        if batches_without_supplier:
-            db.commit()
-
 
 def _daterange_points(start_dt: datetime, end_dt: datetime, step_days: int) -> list[datetime]:
     points: list[datetime] = []
@@ -908,7 +1066,8 @@ def seed_all(db: Session):
     seed_roles(db, his_data)
     seed_users(db, his_data)
     seed_patients(db, his_data)
+    source_to_drug_id = seed_drugs_and_batches(db, his_data)
     seed_suppliers(db, his_data)
-    seed_drugs_and_batches(db, his_data)
+    seed_drug_batches(db, his_data, source_to_drug_id)
     seed_operational_history(db)
     sync_postgres_sequences(db)

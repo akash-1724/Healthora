@@ -13,5 +13,9 @@ dist/
 # Environment
 .env
 
+# Database exports
+backups/
+*.dump
+
 # OS
 .DS_Store

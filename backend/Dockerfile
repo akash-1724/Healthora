@@ -12,6 +12,7 @@ COPY backend/pyproject.toml ./pyproject.toml
 RUN poetry config virtualenvs.create false && success=0; for i in 1 2 3; do poetry install --no-interaction --no-ansi && success=1 && break; echo "Poetry install failed, retry $i/3"; sleep 10; done; if [ "$success" -ne 1 ]; then echo "Poetry install failed after retries"; exit 1; fi
 
 COPY backend/ ./
+COPY ["HIS (1).xlsx", "/app/HIS (1).xlsx"]
 
 EXPOSE 8000
 

@@ -21,13 +21,27 @@ Full-stack RBAC pharmacy dashboard with React frontend, FastAPI backend, Postgre
 
 ## Seed Data
 
-Startup seed reads core sheets from `HIS (1).xlsx` (mounted into backend container) for:
+Startup seed reads core sheets from `HIS (1).xlsx` (bundled into backend image) for:
 
 - roles
 - users
 - patients (capped by `HIS_PATIENT_SEED_LIMIT`, default `300`)
 - drugs
 - drug batches
+
+Also seeded for demo reporting timeline (`2024-01-01` to `2025-03-05`):
+
+- suppliers
+- purchase orders + items
+- prescriptions + items
+- dispensing records
+- audit logs
+- notifications
+
+Seed behavior flags:
+
+- `ENABLE_STARTUP_SEED=true` -> run startup seed
+- `SEED_FAIL_OPEN=true` -> if seed fails, backend logs error and still starts (dev-friendly)
 
 Roles:
 
@@ -132,6 +146,44 @@ Open:
 
 - Frontend: http://localhost:3000
 - Backend docs: http://localhost:8000/docs
+
+## Sharing DB Data With a Friend
+
+Important: PostgreSQL data is stored in Docker volume `postgres_data`; it is **not** included in git by default.
+
+### Option A (recommended for consistent demo): regenerate seeded dataset
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+This recreates DB and applies deterministic startup seed.
+
+Because the seed source workbook is now inside the backend image, a plain `docker compose up --build` is enough on another machine (no extra workbook mount required).
+
+### Option B (exact copy): export/import your DB
+
+On your machine:
+
+```bash
+bash scripts/db_export.sh
+```
+
+This writes a dump under `backups/`.
+
+On your friend's machine (after copying that dump file):
+
+```bash
+bash scripts/db_import.sh backups/<your_dump_file>.dump
+```
+
+Then verify quickly:
+
+```bash
+docker compose exec postgres psql -U healthora_user -d healthora -c "SELECT COUNT(*) FROM dispensing_records;"
+docker compose exec postgres psql -U healthora_user -d healthora -c "SELECT MIN(dispensed_at), MAX(dispensed_at) FROM dispensing_records;"
+```
 
 ## Migration
 

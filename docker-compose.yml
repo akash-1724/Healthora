@@ -30,6 +30,7 @@ services:
       HIS_XLSX_PATH: /app/HIS (1).xlsx
       HIS_PATIENT_SEED_LIMIT: ${HIS_PATIENT_SEED_LIMIT:-300}
       ENABLE_STARTUP_SEED: ${ENABLE_STARTUP_SEED:-true}
+      SEED_FAIL_OPEN: ${SEED_FAIL_OPEN:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
@@ -39,8 +40,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./HIS (1).xlsx:/app/HIS (1).xlsx:ro
     ports:
       - "8000:8000"
 
