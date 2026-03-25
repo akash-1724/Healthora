@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from deps import get_current_user
+from deps import get_current_user, require_permission
 from models import Role, User
 from schemas import (
+    CreateSysAdminRequest,
     LoginRequest,
     LoginResponse,
     RegisterSysAdminRequest,
@@ -70,6 +71,42 @@ def register_sysadmin(payload: RegisterSysAdminRequest, db: Session = Depends(ge
         role=role.name,
         display_name=role.display_name,
         must_reset_password=user.must_reset_password,
+    )
+
+
+@router.post("/create-sysadmin", response_model=UserProfile, dependencies=[Depends(require_permission("manage_users"))])
+def create_sysadmin(payload: CreateSysAdminRequest, db: Session = Depends(get_db)):
+    role = db.query(Role).filter(Role.name == "system_admin").first()
+    if not role:
+        raise HTTPException(status_code=500, detail="System admin role not configured")
+
+    existing = db.query(User).filter(User.username == payload.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    user = User(
+        username=payload.username,
+        password=hash_password(payload.password),
+        full_name=payload.full_name,
+        email=payload.email,
+        phone=payload.phone,
+        role_id=role.id,
+        department="Administration",
+        is_active=True,
+        failed_login_count=0,
+        must_reset_password=False,
+        password_changed_at=datetime.utcnow(),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return UserProfile(
+        user_id=user.user_id,
+        username=user.username,
+        role=role.name,
+        display_name=role.display_name,
+        is_active=user.is_active,
     )
 
 

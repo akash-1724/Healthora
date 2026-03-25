@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from audit import log_action
@@ -87,7 +88,7 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
 
     rx = Prescription(
         patient_id=payload.patient_id,
-        doctor_name=payload.doctor_name,
+        doctor_name=(current_user.full_name or current_user.username),
         diagnosis=payload.diagnosis,
         notes=payload.notes,
         status="open",
@@ -112,6 +113,65 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
     db.commit()
     db.refresh(rx)
     return to_prescription_read(rx)
+
+
+@router.post("/dispensing/dispatch/{prescription_id}", response_model=list[DispensingRecordRead], dependencies=[Depends(require_permission("dispense_drugs"))])
+def dispatch_prescription(prescription_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    rx = db.query(Prescription).filter(Prescription.prescription_id == prescription_id).first()
+    if not rx:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    if rx.status != "open":
+        raise HTTPException(status_code=400, detail="Only active prescriptions can be dispatched")
+    if not rx.items:
+        raise HTTPException(status_code=400, detail="Prescription has no items")
+
+    records: list[DispensingRecord] = []
+    for item in rx.items:
+        required_qty = max(1, item.quantity_prescribed or 1)
+        batch = (
+            db.query(DrugBatch)
+            .filter(
+                and_(
+                    DrugBatch.drug_id == item.drug_id,
+                    DrugBatch.is_expired.is_(False),
+                    DrugBatch.quantity_available >= required_qty,
+                )
+            )
+            .order_by(DrugBatch.expiry_date.asc(), DrugBatch.batch_id.asc())
+            .first()
+        )
+        if not batch:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient active stock for drug_id {item.drug_id}",
+            )
+
+        batch.quantity_available -= required_qty
+        record = DispensingRecord(
+            prescription_id=rx.prescription_id,
+            patient_id=rx.patient_id,
+            batch_id=batch.batch_id,
+            quantity_dispensed=required_qty,
+            dispensed_by_user_id=current_user.user_id,
+            notes="dispatched",
+        )
+        db.add(record)
+        db.flush()
+        records.append(record)
+
+    rx.status = "dispensed"
+    log_action(
+        db,
+        "dispatch_prescription",
+        actor_user_id=current_user.user_id,
+        target_table="prescriptions",
+        target_id=rx.prescription_id,
+        detail={"items": len(records)},
+    )
+    db.commit()
+    for record in records:
+        db.refresh(record)
+    return [to_dispensing_read(record) for record in records]
 
 
 @router.patch("/prescriptions/{prescription_id}/cancel", response_model=PrescriptionRead, dependencies=[Depends(require_permission("add_prescriptions"))])

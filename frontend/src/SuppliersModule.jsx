@@ -9,7 +9,7 @@ export default function SuppliersModule({ hasPermission }) {
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editTarget, setEditTarget] = useState(null);
-    const [form, setForm] = useState({ name: "", contact_person: "", phone: "", email: "", address: "" });
+    const [form, setForm] = useState({ name: "", phone: "", email: "", address: "" });
 
     async function load() {
         setLoading(true);
@@ -26,7 +26,7 @@ export default function SuppliersModule({ hasPermission }) {
         try {
             await api.createSupplier(form);
             setShowAddModal(false);
-            setForm({ name: "", contact_person: "", phone: "", email: "", address: "" });
+            setForm({ name: "", phone: "", email: "", address: "" });
             setError("");
             await load();
         } catch (err) { setError(err.message); }
@@ -34,7 +34,7 @@ export default function SuppliersModule({ hasPermission }) {
 
     function openEdit(s) {
         setEditTarget(s);
-        setForm({ name: s.name, contact_person: s.contact_person || "", phone: s.phone || "", email: s.email || "", address: s.address || "" });
+        setForm({ name: s.name, phone: s.phone || "", email: s.email || "", address: s.address || "" });
         setShowEditModal(true);
     }
 
@@ -58,8 +58,6 @@ export default function SuppliersModule({ hasPermission }) {
             <>
                 <label>Supplier Name *</label>
                 <input className="input" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} required />
-                <label>Contact Person</label>
-                <input className="input" value={form.contact_person} onChange={(e) => setForm(p => ({ ...p, contact_person: e.target.value }))} />
                 <label>Phone</label>
                 <input className="input" type="tel" value={form.phone} onChange={(e) => setForm(p => ({ ...p, phone: e.target.value }))} />
                 <label>Email</label>
@@ -75,7 +73,7 @@ export default function SuppliersModule({ hasPermission }) {
             <div className="section-header">
                 <h3>Suppliers</h3>
                 {hasPermission("manage_suppliers") && (
-                    <button className="primary-btn" onClick={() => { setError(""); setForm({ name: "", contact_person: "", phone: "", email: "", address: "" }); setShowAddModal(true); }}>
+                    <button className="primary-btn" onClick={() => { setError(""); setForm({ name: "", phone: "", email: "", address: "" }); setShowAddModal(true); }}>
                         Add Supplier
                     </button>
                 )}
@@ -84,12 +82,11 @@ export default function SuppliersModule({ hasPermission }) {
             {loading ? <p>Loading…</p> : (
                 <div className="table-wrap">
                     <table>
-                        <thead><tr><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
                         <tbody>
                             {suppliers.map((s) => (
                                 <tr key={s.supplier_id}>
                                     <td>{s.name}</td>
-                                    <td>{s.contact_person || "—"}</td>
                                     <td>{s.phone || "—"}</td>
                                     <td>{s.email || "—"}</td>
                                     <td><span className={`badge ${s.is_active ? "good" : "high"}`}>{s.is_active ? "Active" : "Inactive"}</span></td>

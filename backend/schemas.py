@@ -40,6 +40,21 @@ class RegisterSysAdminRequest(BaseModel):
         return v
 
 
+class CreateSysAdminRequest(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
 # ─── Roles & Users ───────────────────────────────────────────────────────────
 
 class RoleRead(BaseModel):
@@ -337,7 +352,7 @@ class PrescriptionItemRead(BaseModel):
 
 class PrescriptionCreate(BaseModel):
     patient_id: int
-    doctor_name: str
+    doctor_name: Optional[str] = None
     diagnosis: Optional[str] = None
     notes: Optional[str] = None
     items: list[PrescriptionItemCreate]

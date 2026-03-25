@@ -8,6 +8,7 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [showModal, setShowModal] = useState(false);
+    const [expandedPoId, setExpandedPoId] = useState(null);
     const [form, setForm] = useState({ supplier_id: "", notes: "", items: [{ drug_id: "", quantity_ordered: 1, unit_price: "" }] });
 
     async function load() {
@@ -54,12 +55,22 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
     }
 
     async function updateStatus(po, status) {
-        const label = status === "received" ? "Mark this PO as received?" : "Cancel this PO?";
+        const label = status === "received" ? "Mark this PO as delivered?" : "Cancel this PO?";
         if (!window.confirm(label)) return;
         try { await api.updatePOStatus(po.po_id, status); await load(); } catch (err) { setError(err.message); }
     }
 
-    const statusBadge = { pending: "medium", received: "good", cancelled: "high" };
+    const statusBadge = { pending: "medium", ordered: "medium", received: "good", delivered: "good", cancelled: "high" };
+
+    function uiStatus(status) {
+        if (status === "pending") return "ordered";
+        if (status === "received") return "delivered";
+        return status;
+    }
+
+    function canMarkDelivered(po) {
+        return ["pending", "ordered"].includes((po.status || "").toLowerCase());
+    }
 
     return (
         <div className="section">
@@ -73,25 +84,50 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
             {loading ? <p>Loading…</p> : (
                 <div className="table-wrap">
                     <table>
-                        <thead><tr><th>PO #</th><th>Supplier</th><th>Items</th><th>Ordered By</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>PO #</th><th>Supplier</th><th>Items</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
                         <tbody>
                             {orders.map((po) => (
-                                <tr key={po.po_id}>
-                                    <td>#{po.po_id}</td>
-                                    <td>{po.supplier_name}</td>
-                                    <td>{po.items.length} item(s)</td>
-                                    <td>{po.ordered_by_username || "—"}</td>
-                                    <td><span className={`badge ${statusBadge[po.status] || "medium"}`}>{po.status}</span></td>
-                                    <td>{String(po.created_at).slice(0, 10)}</td>
-                                    <td className="actions-cell">
-                                        {po.status === "pending" && hasPermission("manage_inventory") && (
-                                            <>
-                                                <button className="secondary-btn compact" onClick={() => updateStatus(po, "received")}>Mark Received</button>
-                                                <button className="danger-btn compact" onClick={() => updateStatus(po, "cancelled")}>Cancel</button>
-                                            </>
-                                        )}
-                                    </td>
-                                </tr>
+                                <React.Fragment key={po.po_id}>
+                                    <tr>
+                                        <td>#{po.po_id}</td>
+                                        <td>{po.supplier_name}</td>
+                                        <td>
+                                            <button className="secondary-btn compact" onClick={() => setExpandedPoId(expandedPoId === po.po_id ? null : po.po_id)}>
+                                                {po.items.length} item(s)
+                                            </button>
+                                        </td>
+                                        <td><span className={`badge ${statusBadge[po.status] || "medium"}`}>{uiStatus(po.status)}</span></td>
+                                        <td>{String(po.created_at).slice(0, 10)}</td>
+                                        <td className="actions-cell">
+                                            {canMarkDelivered(po) && hasPermission("manage_inventory") && (
+                                                <button className="primary-btn compact" onClick={() => updateStatus(po, "received")}>Mark Delivered</button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                    {expandedPoId === po.po_id && (
+                                        <tr>
+                                            <td colSpan={6}>
+                                                <div style={{ padding: "8px 10px", background: "#f8fafc", border: "1px solid #cbd5e1" }}>
+                                                    <strong>Ordered Items</strong>
+                                                    <div className="table-wrap" style={{ marginTop: 8 }}>
+                                                        <table>
+                                                            <thead><tr><th>Drug</th><th>Quantity</th><th>Unit Price</th></tr></thead>
+                                                            <tbody>
+                                                                {po.items.map((item) => (
+                                                                    <tr key={item.item_id}>
+                                                                        <td>{item.drug_name}</td>
+                                                                        <td>{item.quantity_ordered}</td>
+                                                                        <td>{item.unit_price == null ? "—" : `₹${item.unit_price}`}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </React.Fragment>
                             ))}
                         </tbody>
                     </table>

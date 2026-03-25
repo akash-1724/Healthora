@@ -13,7 +13,7 @@ export default function InventoryModule({ drugs, inventoryRows, hasPermission, o
     ];
 
     const availableTabs = useMemo(() => {
-        if (mode === "drugs") return ["drugs"];
+        if (mode === "drugs") return ["drugs", "batches"];
         return ["batches", "stock"];
     }, [mode]);
 

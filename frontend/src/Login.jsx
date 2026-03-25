@@ -49,6 +49,10 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    if (mode === "register" && !setupRequired) {
+      setError("Sysadmin registration is only available during first-time setup. Use an existing admin account and create users from Dashboard > Users.");
+      return;
+    }
     setLoading(true);
     try {
       const data = mode === "register"
@@ -71,12 +75,13 @@ export default function Login() {
   }
 
   const hints = [
-    { user: "sysadmin", pass: "admin", role: "System Admin" },
-    { user: "cmo1", pass: "cmo", role: "Chief Medical Officer" },
-    { user: "pm1", pass: "manager", role: "Pharmacy Manager" },
-    { user: "senior1", pass: "senior", role: "Sr. Pharmacist" },
-    { user: "staff1", pass: "staff", role: "Staff Pharmacist" },
-    { user: "clerk1", pass: "clerk", role: "Inventory Clerk" },
+    { user: "a.sharma", pass: "$123q", role: "System Admin" },
+    { user: "j.doe", pass: "$123q", role: "Chief Medical Officer" },
+    { user: "pharm.chief", pass: "$123q", role: "Pharmacy Manager" },
+    { user: "s.patel", pass: "$123q", role: "Senior Pharmacist" },
+    { user: "r.jones", pass: "$123q", role: "Staff Pharmacist" },
+    { user: "inv.clerk1", pass: "$123q", role: "Clerk" },
+    { user: "doctor1", pass: "doctor123", role: "Doctor" },
   ];
 
   return (
@@ -102,10 +107,19 @@ export default function Login() {
               type="button"
               className={`secondary-btn compact ${mode === "register" ? "active-btn" : ""}`}
               onClick={() => setMode("register")}
+              disabled={!setupRequired}
             >
               Register Sysadmin
             </button>
           </div>
+
+          {!setupRequired && mode === "login" && (
+            <div className="login-field" style={{ marginTop: -2 }}>
+              <div className="error-msg" style={{ background: "#eef2ff", borderColor: "#c7d2fe", color: "#3730a3" }}>
+                Initial sysadmin setup is already completed for this database.
+              </div>
+            </div>
+          )}
 
           <div className="login-field">
             <label>Username</label>
@@ -177,7 +191,7 @@ export default function Login() {
         {mode === "login" && (
           <div className="login-hint">
             <div style={{ fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 11, marginBottom: 10, color: "#374151" }}>
-              Demo Credentials - click to fill
+              Demo Credentials (click to autofill)
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
               {hints.map((h) => (

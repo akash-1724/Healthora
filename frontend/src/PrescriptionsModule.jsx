@@ -8,9 +8,8 @@ export default function PrescriptionsModule({ patients, drugs, hasPermission }) 
     const [error, setError] = useState("");
     const [search, setSearch] = useState("");
     const [showModal, setShowModal] = useState(false);
-    const [form, setForm] = useState({ patient_id: "", doctor_name: "", diagnosis: "", notes: "", items: [{ drug_id: "", dosage: "", duration: "", quantity_prescribed: 1 }] });
+    const [form, setForm] = useState({ patient_id: "", diagnosis: "", notes: "", items: [{ drug_id: "", dosage: "", duration: "", quantity_prescribed: 1 }] });
     const canViewPrescriptions = hasPermission("view_prescriptions");
-    const canCancelPrescription = hasPermission("add_prescriptions");
     const canCreatePrescription = hasPermission("add_prescriptions") && hasPermission("view_patients") && hasPermission("view_drugs");
 
     async function load() {
@@ -45,12 +44,10 @@ export default function PrescriptionsModule({ patients, drugs, hasPermission }) 
     async function createPrescription(e) {
         e.preventDefault();
         if (!form.patient_id) { setError("Select a patient"); return; }
-        if (!form.doctor_name.trim()) { setError("Doctor name is required"); return; }
         if (form.items.some((item) => !item.drug_id)) { setError("All items must have a drug selected"); return; }
         try {
             await api.createPrescription({
                 patient_id: Number(form.patient_id),
-                doctor_name: form.doctor_name.trim(),
                 diagnosis: form.diagnosis || null,
                 notes: form.notes || null,
                 items: form.items.map((item) => ({
@@ -61,15 +58,10 @@ export default function PrescriptionsModule({ patients, drugs, hasPermission }) 
                 })),
             });
             setShowModal(false);
-            setForm({ patient_id: "", doctor_name: "", diagnosis: "", notes: "", items: [{ drug_id: "", dosage: "", duration: "", quantity_prescribed: 1 }] });
+            setForm({ patient_id: "", diagnosis: "", notes: "", items: [{ drug_id: "", dosage: "", duration: "", quantity_prescribed: 1 }] });
             setError("");
             await load();
         } catch (err) { setError(err.message); }
-    }
-
-    async function cancelRx(rx) {
-        if (!window.confirm(`Cancel prescription #${rx.prescription_id}?`)) return;
-        try { await api.cancelPrescription(rx.prescription_id); await load(); } catch (err) { setError(err.message); }
     }
 
     const statusBadge = { open: "good", dispensed: "medium", cancelled: "high" };
@@ -89,7 +81,7 @@ export default function PrescriptionsModule({ patients, drugs, hasPermission }) 
             {loading ? <p>Loading…</p> : (
                 <div className="table-wrap">
                     <table>
-                        <thead><tr><th>ID</th><th>Patient</th><th>Doctor</th><th>Diagnosis</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>ID</th><th>Patient</th><th>Doctor</th><th>Diagnosis</th><th>Status</th><th>Date</th></tr></thead>
                         <tbody>
                             {filtered.map((rx) => (
                                 <tr key={rx.prescription_id}>
@@ -99,11 +91,6 @@ export default function PrescriptionsModule({ patients, drugs, hasPermission }) 
                                     <td>{rx.diagnosis || "—"}</td>
                                     <td><span className={`badge ${statusBadge[rx.status] || "good"}`}>{rx.status}</span></td>
                                     <td>{String(rx.created_at).slice(0, 10)}</td>
-                                    <td className="actions-cell">
-                                        {rx.status === "open" && canCancelPrescription && (
-                                            <button className="danger-btn compact" onClick={() => cancelRx(rx)}>Cancel</button>
-                                        )}
-                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -118,8 +105,6 @@ export default function PrescriptionsModule({ patients, drugs, hasPermission }) 
                         <option value="">Select patient…</option>
                         {patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.name} (#{p.patient_id})</option>)}
                     </select>
-                    <label>Doctor Name *</label>
-                    <input className="input" value={form.doctor_name} onChange={(e) => setForm(p => ({ ...p, doctor_name: e.target.value }))} required />
                     <label>Diagnosis</label>
                     <input className="input" value={form.diagnosis} onChange={(e) => setForm(p => ({ ...p, diagnosis: e.target.value }))} />
                     <label>Notes</label>

@@ -29,9 +29,10 @@ services:
       SYSADMIN_BOOTSTRAP_KEY: ${SYSADMIN_BOOTSTRAP_KEY:-}
       HIS_XLSX_PATH: /app/HIS (1).xlsx
       HIS_PATIENT_SEED_LIMIT: ${HIS_PATIENT_SEED_LIMIT:-300}
-      ENABLE_STARTUP_SEED: ${ENABLE_STARTUP_SEED:-true}
+      ENABLE_STARTUP_SEED: ${ENABLE_STARTUP_SEED:-false}
       SEED_FAIL_OPEN: ${SEED_FAIL_OPEN:-true}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}
+      ALLOWED_ORIGIN_REGEX: ${ALLOWED_ORIGIN_REGEX:-https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       AI_QUERY_MAX_ROWS: ${AI_QUERY_MAX_ROWS:-100}

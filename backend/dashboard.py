@@ -49,7 +49,8 @@ def dashboard_notifications(current_user: User = Depends(get_current_user)):
         "pharmacy_manager": ["Manager: Approve pending purchase requests"],
         "senior_pharmacist": ["Senior Pharmacist: Review controlled drug movement"],
         "staff_pharmacist": ["Staff Pharmacist: Verify pending dispenses"],
-        "inventory_clerk": ["Inventory Clerk: Update inward stock entries"],
+        "inventory_clerk": ["Clerk: Update inward stock entries"],
+        "doctor": ["Doctor: Review active prescriptions"],
     }
     return common + role_specific.get(role_name, [])
 

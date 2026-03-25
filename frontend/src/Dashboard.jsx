@@ -108,7 +108,7 @@ export default function Dashboard() {
         if (["drugs", "inventory", "prescriptions", "purchase_orders"].includes(active) && hasPermission("view_drugs")) {
           setDrugs(await api.getDrugs());
         }
-        if (["inventory", "dispensing"].includes(active) && hasPermission("view_inventory")) {
+        if (["drugs", "inventory", "dispensing"].includes(active) && hasPermission("view_inventory")) {
           setInventoryRows(await api.getInventory());
         }
         if (["inventory", "purchase_orders"].includes(active) && hasPermission("view_suppliers")) {
@@ -327,11 +327,13 @@ export default function Dashboard() {
           <InventoryModule
             mode="drugs"
             drugs={drugs}
-            inventoryRows={[]}
+            inventoryRows={inventoryRows}
             suppliers={[]}
             hasPermission={hasPermission}
             onRefresh={async () => {
-              setDrugs(await api.getDrugs());
+              const [d, i] = await Promise.all([api.getDrugs(), api.getInventory()]);
+              setDrugs(d);
+              setInventoryRows(i);
               await refreshDashboard();
             }}
           />

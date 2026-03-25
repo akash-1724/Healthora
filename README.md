@@ -21,27 +21,14 @@ Full-stack RBAC pharmacy dashboard with React frontend, FastAPI backend, Postgre
 
 ## Seed Data
 
-Startup seed reads core sheets from `HIS (1).xlsx` (bundled into backend image) for:
+Data is expected to already exist in PostgreSQL.
 
-- roles
-- users
-- patients (capped by `HIS_PATIENT_SEED_LIMIT`, default `300`)
-- drugs
-- drug batches
+Current default mode:
 
-Also seeded for demo reporting timeline (`2024-01-01` to `2025-03-05`):
-
-- suppliers
-- purchase orders + items
-- prescriptions + items
-- dispensing records
-- audit logs
-- notifications
-
-Seed behavior flags:
-
-- `ENABLE_STARTUP_SEED=true` -> run startup seed
+- `ENABLE_STARTUP_SEED=false` (no file-based loading on startup)
 - `SEED_FAIL_OPEN=true` -> if seed fails, backend logs error and still starts (dev-friendly)
+
+Use one-time manual SQL import to load data into database, then run the app normally.
 
 Roles:
 
@@ -54,12 +41,12 @@ Roles:
 
 Users:
 
-- sysadmin / admin
-- cmo1 / cmo
-- pm1 / manager
-- senior1 / senior
-- staff1 / staff
-- clerk1 / clerk
+- a.sharma / $123q (System Admin)
+- j.doe / $123q (Chief Medical Officer)
+- pharm.chief / $123q (Pharmacy Manager)
+- s.patel / $123q (Senior Pharmacist)
+- r.jones / $123q (Staff Pharmacist)
+- inv.clerk1 / $123q (Inventory Clerk)
 
 ## API Highlights
 
@@ -68,6 +55,7 @@ Public:
 - `POST /api/login`
 - `GET /api/setup-status`
 - `POST /api/register-sysadmin` (one-time bootstrap only)
+- `POST /api/create-sysadmin` (system_admin only, for already initialized systems)
 
 Protected (Bearer token required):
 
@@ -158,9 +146,9 @@ docker compose down -v
 docker compose up --build
 ```
 
-This recreates DB and applies deterministic startup seed.
+This recreates DB and applies the SQL dataset from `hospital_complete_v2.sql`.
 
-Because the seed source workbook is now inside the backend image, a plain `docker compose up --build` is enough on another machine (no extra workbook mount required).
+By default, `docker-compose.yml` mounts `../hospital_complete_v2.sql` into the backend container at `/app/hospital_complete_v2.sql`.
 
 ### Option B (exact copy): export/import your DB
 

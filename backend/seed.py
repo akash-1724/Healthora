@@ -3,6 +3,7 @@ import random
 import zipfile
 import json
 import logging
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from xml.etree import ElementTree as ET
 
@@ -49,6 +50,32 @@ ROLE_LABEL_TO_CODE = {
 }
 
 logger = logging.getLogger("healthora.seed")
+
+HOSPITAL_V2_TABLES = [
+    '"User"',
+    "controlled_drug_log",
+    "pharmacy_bill_item",
+    "pharmacy_bill",
+    "dispense_item",
+    "dispense",
+    "prescription_detail",
+    "prescription",
+    "stock_transaction",
+    "purchase_order_item",
+    "purchase_order",
+    "store_inventory",
+    "pharmacy_store",
+    "drug_batch",
+    "supplier",
+    "drug",
+    "manufacturer",
+    "encounter",
+    "doctor",
+    "patient",
+    "department",
+    "role",
+    "hospital",
+]
 
 FALLBACK_DRUG_ROWS = [
     ["1", "Aspirin Ecosprin", "Acetylsalicylic Acid", "Tablet", "75mg", "OTC", "1"],
@@ -1062,6 +1089,21 @@ def sync_postgres_sequences(db: Session):
 
 
 def seed_all(db: Session):
+    seed_mode = os.getenv("SEED_MODE", "sql_file").strip().lower()
+    if seed_mode in {"sql_file", "hospital_sql"}:
+        dataset_path = _resolve_hospital_sql_path()
+        reset_before_load = os.getenv("HOSPITAL_SQL_RESET", "true").strip().lower() == "true"
+        sync_legacy = os.getenv("SYNC_TO_LEGACY_TABLES", "true").strip().lower() == "true"
+
+        if reset_before_load:
+            _reset_hospital_sql_tables(db)
+        _load_hospital_sql_dataset(db, dataset_path)
+        if sync_legacy:
+            _sync_legacy_app_tables_from_hospital_sql(db)
+            sync_postgres_sequences(db)
+        logger.info("Loaded hospital dataset from %s", dataset_path)
+        return
+
     his_data = load_his_data()
     seed_roles(db, his_data)
     seed_users(db, his_data)
@@ -1071,3 +1113,312 @@ def seed_all(db: Session):
     seed_drug_batches(db, his_data, source_to_drug_id)
     seed_operational_history(db)
     sync_postgres_sequences(db)
+
+
+def _resolve_hospital_sql_path() -> str:
+    configured_path = os.getenv("HOSPITAL_DATA_SQL_PATH", "").strip()
+    candidates = []
+    if configured_path:
+        candidates.append(Path(configured_path))
+    candidates.extend(
+        [
+            Path("/app/hospital_complete_v2.sql"),
+            Path(__file__).resolve().parents[2] / "hospital_complete_v2.sql",
+            Path(__file__).resolve().parents[3] / "hospital_complete_v2.sql",
+        ]
+    )
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return str(candidate)
+    raise FileNotFoundError(
+        "hospital_complete_v2.sql not found. Set HOSPITAL_DATA_SQL_PATH to the dataset location."
+    )
+
+
+def _reset_hospital_sql_tables(db: Session):
+    for table_name in HOSPITAL_V2_TABLES:
+        try:
+            db.execute(text(f"TRUNCATE TABLE {table_name} RESTART IDENTITY CASCADE"))
+        except Exception:
+            db.rollback()
+    db.commit()
+
+
+def _load_hospital_sql_dataset(db: Session, sql_file_path: str):
+    with open(sql_file_path, "r", encoding="utf-8") as fh:
+        sql_text = fh.read()
+
+    normalized_lines = []
+    for line in sql_text.splitlines():
+        stripped = line.strip().rstrip(";").upper()
+        if stripped in {"BEGIN", "COMMIT"}:
+            continue
+        normalized_lines.append(line)
+    executable_sql = "\n".join(normalized_lines)
+
+    connection = db.connection().connection
+    cursor = connection.cursor()
+    try:
+        cursor.execute(executable_sql)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
+def _sync_legacy_app_tables_from_hospital_sql(db: Session):
+    db.execute(text("TRUNCATE TABLE dispensing_records RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE prescription_items RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE prescriptions RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE purchase_order_items RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE purchase_orders RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE drug_batches RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE drugs RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE patients RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE suppliers RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE roles RESTART IDENTITY CASCADE"))
+
+    db.execute(
+        text(
+            """
+            INSERT INTO roles (id, name, display_name)
+            SELECT
+                r.role_id,
+                CASE lower(r.role_name)
+                    WHEN 'system admin' THEN 'system_admin'
+                    WHEN 'chief medical officer' THEN 'chief_medical_officer'
+                    WHEN 'pharmacy manager' THEN 'pharmacy_manager'
+                    WHEN 'senior pharmacist' THEN 'senior_pharmacist'
+                    WHEN 'staff pharmacist' THEN 'staff_pharmacist'
+                    WHEN 'inventory clerk' THEN 'inventory_clerk'
+                    ELSE regexp_replace(lower(r.role_name), '[^a-z0-9]+', '_', 'g')
+                END,
+                r.role_name
+            FROM role r
+            ORDER BY r.role_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO users (
+                user_id,
+                username,
+                password,
+                role_id,
+                department,
+                is_active,
+                failed_login_count,
+                must_reset_password,
+                created_at
+            )
+            SELECT
+                u.user_id,
+                u.username,
+                u.password,
+                u.role_id,
+                COALESCE(d.name, 'Pharmacy') AS department,
+                COALESCE(u.is_active, TRUE),
+                0,
+                FALSE,
+                COALESCE(u.created_at, NOW())
+            FROM "User" u
+            LEFT JOIN department d ON d.department_id = u.department_id
+            ORDER BY u.user_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO suppliers (supplier_id, name, contact_person, phone, email, address, is_active, created_at)
+            SELECT
+                s.supplier_id,
+                s.name,
+                NULL,
+                split_part(COALESCE(s.contact_details, ''), '/', 1),
+                NULLIF(trim(split_part(COALESCE(s.contact_details, ''), '/', 2)), ''),
+                s.contact_details,
+                TRUE,
+                NOW()
+            FROM supplier s
+            ORDER BY s.supplier_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO patients (patient_id, name, address, gender, contact, dob, blood_group, created_by_user_id, created_at, is_archived)
+            SELECT
+                p.patient_id,
+                trim(concat_ws(' ', p.first_name, p.last_name)) AS name,
+                h.address,
+                p.gender,
+                p.contact_no,
+                p.dob,
+                p.blood_group,
+                NULL,
+                NOW(),
+                FALSE
+            FROM patient p
+            LEFT JOIN hospital h ON h.hospital_id = p.hospital_id
+            ORDER BY p.patient_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO drugs (drug_id, drug_name, generic_name, formulation, strength, schedule_type, is_active, low_stock_threshold)
+            SELECT
+                d.drug_id,
+                d.drug_name,
+                d.generic_name,
+                d.formulation,
+                d.strength,
+                d.schedule_type,
+                TRUE,
+                50
+            FROM drug d
+            ORDER BY d.drug_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO drug_batches (batch_id, drug_id, batch_no, expiry_date, purchase_price, selling_price, quantity_available, is_expired, supplier_id)
+            SELECT
+                b.batch_id,
+                b.drug_id,
+                b.batch_no,
+                b.expiry_date,
+                b.purchase_price,
+                b.selling_price,
+                b.quantity_available,
+                (b.expiry_date < CURRENT_DATE),
+                NULL
+            FROM drug_batch b
+            ORDER BY b.batch_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO purchase_orders (po_id, supplier_id, ordered_by_user_id, status, notes, created_at, received_at)
+            SELECT
+                po.po_id,
+                po.supplier_id,
+                NULL,
+                COALESCE(po.status, 'pending'),
+                NULL,
+                COALESCE(po.order_date::timestamp, NOW()),
+                NULL
+            FROM purchase_order po
+            ORDER BY po.po_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO purchase_order_items (item_id, po_id, drug_id, quantity_ordered, quantity_received, unit_price)
+            SELECT
+                poi.po_item_id,
+                poi.po_id,
+                poi.drug_id,
+                poi.quantity_ordered,
+                0,
+                poi.unit_cost
+            FROM purchase_order_item poi
+            ORDER BY poi.po_item_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO prescriptions (prescription_id, patient_id, doctor_name, diagnosis, notes, status, created_by_user_id, created_at)
+            SELECT
+                p.prescription_id,
+                e.patient_id,
+                COALESCE(d.name, 'Unknown Doctor'),
+                NULL,
+                NULL,
+                COALESCE(p.status, 'open'),
+                NULL,
+                COALESCE(p.prescription_date, NOW())
+            FROM prescription p
+            JOIN encounter e ON e.encounter_id = p.encounter_id
+            LEFT JOIN doctor d ON d.doctor_id = p.doctor_id
+            ORDER BY p.prescription_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO prescription_items (item_id, prescription_id, drug_id, dosage, duration, quantity_prescribed)
+            SELECT
+                pd.prescription_item_id,
+                pd.prescription_id,
+                pd.drug_id,
+                trim(concat_ws(' | ', pd.dosage, pd.frequency)),
+                CASE
+                    WHEN pd.duration_days IS NULL THEN NULL
+                    ELSE concat(pd.duration_days::text, ' days')
+                END,
+                COALESCE(pd.quantity_prescribed, 1)
+            FROM prescription_detail pd
+            ORDER BY pd.prescription_item_id
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            INSERT INTO dispensing_records (
+                record_id,
+                prescription_id,
+                patient_id,
+                batch_id,
+                quantity_dispensed,
+                dispensed_by_user_id,
+                dispensed_at,
+                notes
+            )
+            SELECT
+                di.dispense_item_id,
+                d.prescription_id,
+                e.patient_id,
+                di.batch_id,
+                COALESCE(di.quantity_dispensed, 0),
+                d.pharmacist_id,
+                COALESCE(d.dispense_date, NOW()),
+                NULL
+            FROM dispense_item di
+            JOIN dispense d ON d.dispense_id = di.dispense_id
+            JOIN prescription p ON p.prescription_id = d.prescription_id
+            JOIN encounter e ON e.encounter_id = p.encounter_id
+            ORDER BY di.dispense_item_id
+            """
+        )
+    )
+
+    db.commit()

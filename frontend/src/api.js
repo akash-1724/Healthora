@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
 
 function authHeader() {
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -11,7 +11,7 @@ async function request(path, options = {}) {
     ...options,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || "Request failed");
+  if (!res.ok) throw new Error(normalizeApiError(data));
   return data;
 }
 
@@ -22,7 +22,7 @@ async function requestForm(path, formData) {
     body: formData,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || "Request failed");
+  if (!res.ok) throw new Error(normalizeApiError(data));
   return data;
 }
 
@@ -33,9 +33,25 @@ async function requestBlob(path, options = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || "Request failed");
+    throw new Error(normalizeApiError(data));
   }
   return res.blob();
+}
+
+function normalizeApiError(data) {
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (typeof first === "string") return first;
+    if (first && typeof first === "object") {
+      return first.msg || first.message || JSON.stringify(first);
+    }
+  }
+  if (detail && typeof detail === "object") {
+    return detail.message || JSON.stringify(detail);
+  }
+  return "Request failed";
 }
 
 export const api = {
@@ -43,6 +59,7 @@ export const api = {
   login: (username, password) => request("/api/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   setupStatus: () => request("/api/setup-status"),
   registerSysadmin: (payload) => request("/api/register-sysadmin", { method: "POST", body: JSON.stringify(payload) }),
+  createSysadmin: (payload) => request("/api/create-sysadmin", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/api/me"),
 
   // ── Dashboard ─────────────────────────────────────────────────────────
@@ -108,6 +125,7 @@ export const api = {
   // ── Dispensing ────────────────────────────────────────────────────────
   getDispensingRecords: (patientId) => request(`/api/dispensing${patientId ? `?patient_id=${patientId}` : ""}`),
   dispense: (payload) => request("/api/dispensing", { method: "POST", body: JSON.stringify(payload) }),
+  dispatchPrescription: (prescriptionId) => request(`/api/dispensing/dispatch/${prescriptionId}`, { method: "POST" }),
 
   // ── Audit Logs ────────────────────────────────────────────────────────
   getAuditLogs: (action) => request(`/api/audit-logs${action ? `?action=${action}` : ""}`),

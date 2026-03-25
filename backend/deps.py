@@ -13,11 +13,9 @@ ROLE_PERMISSIONS = {
         "manage_users",
         "view_dashboard_summary",
         "view_patients",
-        "add_patients",
         "view_drugs",
         "view_inventory",
         "view_prescriptions",
-        "add_prescriptions",
         "view_dispensing",
         "dispense_drugs",
         "manage_inventory",
@@ -29,10 +27,8 @@ ROLE_PERMISSIONS = {
     "chief_medical_officer": {
         "view_dashboard_summary",
         "view_patients",
-        "add_patients",
         "view_drugs",
         "view_prescriptions",
-        "add_prescriptions",
         "view_dispensing",
         "view_ai_report",
     },
@@ -77,6 +73,15 @@ ROLE_PERMISSIONS = {
         "view_inventory",
         "update_inventory",
         "view_suppliers",
+        "view_patients",
+        "add_patients",
+    },
+    "doctor": {
+        "view_dashboard_summary",
+        "view_patients",
+        "view_drugs",
+        "view_prescriptions",
+        "add_prescriptions",
     },
 }
 
@@ -87,7 +92,8 @@ ROLE_MODULES = {
     "pharmacy_manager": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "ai_report"],
     "senior_pharmacist": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing"],
     "staff_pharmacist": ["dashboard", "drugs", "inventory", "dispensing"],
-    "inventory_clerk": ["dashboard", "drugs", "inventory", "suppliers"],
+    "inventory_clerk": ["dashboard", "patients", "drugs", "inventory", "suppliers"],
+    "doctor": ["dashboard", "patients", "drugs", "prescriptions"],
 }
 
 

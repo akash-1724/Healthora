@@ -125,7 +125,7 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
                     <thead>
                         <tr>
                             <th>ID</th><th>Name</th><th>Gender</th><th>Contact</th><th>Blood Group</th>
-                            <th>Created By</th><th>Date</th><th>Actions</th>
+                            <th>Created By</th><th>Date</th>{hasPermission("add_patients") && <th>Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -138,10 +138,12 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
                                 <td>{p.blood_group || "—"}</td>
                                 <td>{p.created_by || "System"}</td>
                                 <td>{String(p.created_at || "").slice(0, 10)}</td>
-                                <td className="actions-cell">
-                                    <button className="secondary-btn compact" onClick={() => openEdit(p)}>Edit</button>
-                                    <button className="danger-btn compact" onClick={() => archivePatient(p)}>Archive</button>
-                                </td>
+                                {hasPermission("add_patients") && (
+                                    <td className="actions-cell">
+                                        <button className="secondary-btn compact" onClick={() => openEdit(p)}>Edit</button>
+                                        <button className="danger-btn compact" onClick={() => archivePatient(p)}>Archive</button>
+                                    </td>
+                                )}
                             </tr>
                         ))}
                     </tbody>
