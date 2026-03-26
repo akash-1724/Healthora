@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import re
 from typing import Optional
 
 from pydantic import BaseModel, field_validator
@@ -38,6 +39,18 @@ class RegisterSysAdminRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_10_digits(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        value = v.strip()
+        if value == "":
+            return None
+        if not re.fullmatch(r"\d{10}", value):
+            raise ValueError("Phone must be exactly 10 digits")
+        return value
 
 
 # ─── Roles & Users ───────────────────────────────────────────────────────────
@@ -87,6 +100,18 @@ class UserCreate(BaseModel):
             raise ValueError("Password must be at least 6 characters")
         return v
 
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_10_digits(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        value = v.strip()
+        if value == "":
+            return None
+        if not re.fullmatch(r"\d{10}", value):
+            raise ValueError("Phone must be exactly 10 digits")
+        return value
+
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -96,6 +121,18 @@ class UserUpdate(BaseModel):
     department: Optional[str] = None
     is_active: Optional[bool] = None
     must_reset_password: Optional[bool] = None
+
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_10_digits(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        value = v.strip()
+        if value == "":
+            return None
+        if not re.fullmatch(r"\d{10}", value):
+            raise ValueError("Phone must be exactly 10 digits")
+        return value
 
 
 class PasswordResetRequest(BaseModel):
@@ -148,6 +185,17 @@ class PatientCreate(BaseModel):
     dob: Optional[date] = None
     blood_group: Optional[str] = None
 
+    @field_validator("dob")
+    @classmethod
+    def dob_year_must_be_realistic(cls, v: Optional[date]) -> Optional[date]:
+        if v is None:
+            return v
+        if v.year < 1900:
+            raise ValueError("Date of birth year must be 1900 or later")
+        if v > date.today():
+            raise ValueError("Date of birth cannot be in the future")
+        return v
+
 
 class PatientUpdate(BaseModel):
     name: Optional[str] = None
@@ -156,6 +204,17 @@ class PatientUpdate(BaseModel):
     contact: Optional[str] = None
     dob: Optional[date] = None
     blood_group: Optional[str] = None
+
+    @field_validator("dob")
+    @classmethod
+    def dob_year_must_be_realistic(cls, v: Optional[date]) -> Optional[date]:
+        if v is None:
+            return v
+        if v.year < 1900:
+            raise ValueError("Date of birth year must be 1900 or later")
+        if v > date.today():
+            raise ValueError("Date of birth cannot be in the future")
+        return v
 
 
 # ─── Drugs & Batches ─────────────────────────────────────────────────────────

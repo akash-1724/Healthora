@@ -74,7 +74,7 @@ export default function Dashboard() {
     dispensing: "view_dispensing",
     suppliers: "view_suppliers",
     purchase_orders: "manage_inventory",
-    reorder_recommendation: "view_inventory",
+    reorder_recommendation: "manage_inventory",
     users: "manage_users",
     audit: "view_audit_logs",
     ai_report: "view_ai_report",

@@ -20,6 +20,7 @@ from models import DrugBatch
 from notifications import router as notifications_router
 from prescriptions import router as prescriptions_router
 from purchase_orders import router as purchase_orders_router
+from reorder_recommendation import router as reorder_recommendation_router
 from seed import seed_all
 from suppliers import router as suppliers_router
 from users import router as users_router
@@ -121,3 +122,4 @@ app.include_router(purchase_orders_router)
 app.include_router(notifications_router)
 app.include_router(audit_log_router)
 app.include_router(ai_report_router)
+app.include_router(reorder_recommendation_router)

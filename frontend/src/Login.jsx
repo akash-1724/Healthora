@@ -114,7 +114,7 @@ export default function Login() {
               </div>
               <div className="login-field">
                 <label>Phone</label>
-                <input className="input" placeholder="Enter phone" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
+                <input className="input" placeholder="10 digit phone" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} autoComplete="tel" maxLength={10} />
               </div>
               <div className="login-field">
                 <label>Hospital Key</label>

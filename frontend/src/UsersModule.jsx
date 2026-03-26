@@ -53,6 +53,7 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
         if (!form.password || form.password.length < 6) e.password = "Min 6 characters";
         if (!form.role_id) e.role_id = "Required";
         if (!form.department?.trim()) e.department = "Required";
+        if (form.phone && !/^\d{10}$/.test(form.phone.trim())) e.phone = "Phone must be exactly 10 digits";
         return e;
     }
 
@@ -72,6 +73,11 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
         e.preventDefault(); setSubmitting(true); setErr("");
         if (!editForm.role_id) {
             setErr("Select a role");
+            setSubmitting(false);
+            return;
+        }
+        if (editForm.phone && !/^\d{10}$/.test(editForm.phone.trim())) {
+            setErr("Phone must be exactly 10 digits");
             setSubmitting(false);
             return;
         }
@@ -208,7 +214,8 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
                     </div>
                     <div>
                         <label>Phone</label>
-                        <input className="input" value={addForm.phone} onChange={(e) => setAddForm(p => ({ ...p, phone: e.target.value }))} />
+                        <input className="input" value={addForm.phone} onChange={(e) => setAddForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} maxLength={10} placeholder="10 digit phone" />
+                        {errors.phone && <p className="error">{errors.phone}</p>}
                     </div>
                     <div className="form-row">
                         <div>
@@ -244,7 +251,7 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
                     <label>Email</label>
                     <input className="input" type="email" value={editForm.email} onChange={(e) => setEditForm(p => ({ ...p, email: e.target.value }))} />
                     <label>Phone</label>
-                    <input className="input" value={editForm.phone} onChange={(e) => setEditForm(p => ({ ...p, phone: e.target.value }))} />
+                    <input className="input" value={editForm.phone} onChange={(e) => setEditForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} maxLength={10} placeholder="10 digit phone" />
                     <label>Department</label>
                     <select className="input" value={editForm.department} onChange={(e) => setEditForm(p => ({ ...p, department: e.target.value, role_id: "" }))}>
                         {departments.map((d) => <option key={d}>{d}</option>)}

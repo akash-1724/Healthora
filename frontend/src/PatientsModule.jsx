@@ -19,6 +19,14 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
 
     function validatePatient(form) {
         if (!form.name || !form.name.trim()) return "Patient name is required";
+        if (form.dob) {
+            const parsed = parseDobToIso(form.dob);
+            if (!parsed) return "Date of Birth is invalid";
+            const year = Number(parsed.slice(0, 4));
+            const today = new Date().toISOString().slice(0, 10);
+            if (year < 1900) return "Date of Birth year must be 1900 or later";
+            if (parsed > today) return "Date of Birth cannot be in the future";
+        }
         return null;
     }
 
@@ -31,7 +39,7 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
                 name: newPatient.name.trim(),
                 contact: newPatient.contact || null,
                 gender: newPatient.gender || null,
-                dob: newPatient.dob || null,
+                dob: parseDobToIso(newPatient.dob) || null,
                 blood_group: newPatient.blood_group || null,
                 address: newPatient.address || null,
             });
@@ -48,7 +56,7 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
             name: row.name,
             contact: row.contact || "",
             gender: row.gender || "",
-            dob: row.dob || "",
+            dob: parseDobToIso(row.dob) || "",
             blood_group: row.blood_group || "",
             address: row.address || "",
         });
@@ -64,7 +72,7 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
                 name: editForm.name.trim(),
                 contact: editForm.contact || null,
                 gender: editForm.gender || null,
-                dob: editForm.dob || null,
+                dob: parseDobToIso(editForm.dob) || null,
                 blood_group: editForm.blood_group || null,
                 address: editForm.address || null,
             });
@@ -81,6 +89,21 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
 
     const genderOptions = ["", "Male", "Female", "Other"];
     const bloodGroups = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+    const today = new Date().toISOString().slice(0, 10);
+
+    function parseDobToIso(value) {
+        if (!value) return "";
+        const raw = String(value).trim();
+        if (!raw) return "";
+
+        const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+        const dmy = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+
+        return "";
+    }
 
     function PatientForm({ form, setForm, onSubmit, submitLabel }) {
         return (
@@ -92,7 +115,14 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
                     {genderOptions.map((g) => <option key={g} value={g}>{g || "— Select —"}</option>)}
                 </select>
                 <label>Date of Birth</label>
-                <input className="input" type="date" value={form.dob} onChange={(e) => setForm(p => ({ ...p, dob: e.target.value }))} />
+                <input
+                    className="input"
+                    type="date"
+                    value={form.dob || ""}
+                    min="1900-01-01"
+                    max={today}
+                    onChange={(e) => setForm(p => ({ ...p, dob: e.target.value }))}
+                />
                 <label>Contact Number</label>
                 <input className="input" type="tel" value={form.contact} onChange={(e) => setForm(p => ({ ...p, contact: e.target.value }))} placeholder="+91-XXXXX-XXXXX" />
                 <label>Blood Group</label>

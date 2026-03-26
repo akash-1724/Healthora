@@ -90,9 +90,9 @@ ROLE_MODULES = {
     "system_admin": ["dashboard", "users", "patients", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "reorder_recommendation", "audit", "ai_report"],
     "chief_medical_officer": ["dashboard", "patients", "inventory", "prescriptions", "dispensing", "ai_report"],
     "pharmacy_manager": ["dashboard", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "reorder_recommendation", "ai_report"],
-    "senior_pharmacist": ["dashboard", "inventory", "prescriptions", "dispensing", "reorder_recommendation"],
-    "staff_pharmacist": ["dashboard", "inventory", "dispensing", "reorder_recommendation"],
-    "inventory_clerk": ["dashboard", "patients", "inventory", "suppliers", "reorder_recommendation"],
+    "senior_pharmacist": ["dashboard", "inventory", "prescriptions", "dispensing"],
+    "staff_pharmacist": ["dashboard", "inventory", "dispensing"],
+    "inventory_clerk": ["dashboard", "patients", "inventory", "suppliers"],
     "doctor": ["dashboard", "patients", "inventory", "prescriptions"],
 }
 

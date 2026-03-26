@@ -104,6 +104,7 @@ export const api = {
     return requestForm("/api/drug-batches/bulk-upload", formData);
   },
   markBatchExpired: (batchId) => request(`/api/drug-batches/${batchId}/mark-expired`, { method: "PATCH" }),
+  getReorderRecommendations: () => request("/api/reorder-recommendation"),
 
   // ── Suppliers ─────────────────────────────────────────────────────────
   getSuppliers: () => request("/api/suppliers"),
