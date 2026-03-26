@@ -56,6 +56,7 @@ export default function AIReportModule() {
   const [error, setError] = useState("");
   const [format, setFormat] = useState("pdf");
   const [report, setReport] = useState(null);
+  const [showSql, setShowSql] = useState(false);
 
   const previewRows = useMemo(() => (report?.rows || []).slice(0, 120), [report]);
 
@@ -66,6 +67,7 @@ export default function AIReportModule() {
     try {
       const data = await api.aiGenerateReport(question.trim());
       setReport(data);
+      setShowSql(false);
     } catch (e) {
       setError(e.message || "Failed to generate report");
       setReport(null);
@@ -109,11 +111,6 @@ export default function AIReportModule() {
         />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button className="primary-btn" onClick={generateReport} disabled={loading}>{loading ? "Generating..." : "Generate Preview"}</button>
-          <select value={format} onChange={(e) => setFormat(e.target.value)} style={{ border: "2px solid #111827", padding: "8px 10px", background: "#fff", fontWeight: 700 }}>
-            <option value="pdf">PDF</option>
-            <option value="csv">CSV</option>
-          </select>
-          <button className="secondary-btn" onClick={downloadReport} disabled={!report || downloading}>{downloading ? "Downloading..." : "Download"}</button>
           {report?.cached && <span className="badge low">cached</span>}
         </div>
       </div>
@@ -122,6 +119,17 @@ export default function AIReportModule() {
 
       {report && (
         <>
+          <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select value={format} onChange={(e) => setFormat(e.target.value)} style={{ border: "2px solid #111827", padding: "8px 10px", background: "#fff", fontWeight: 700 }}>
+              <option value="pdf">PDF</option>
+              <option value="csv">CSV</option>
+            </select>
+            <button className="secondary-btn" onClick={downloadReport} disabled={downloading}>{downloading ? "Downloading..." : "Download"}</button>
+            <button className="secondary-btn" onClick={() => setShowSql((prev) => !prev)}>
+              {showSql ? "Hide SQL Query" : "Show SQL Query"}
+            </button>
+          </div>
+
           <div style={{ marginTop: 14, border: "1px solid #d1d5db", background: "#f9fafb", padding: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.05em", color: "#6b7280", textTransform: "uppercase" }}>Executive Summary</div>
             <div style={{ marginTop: 8, color: "#111827", lineHeight: 1.5 }}>{report.summary_text}</div>
@@ -150,10 +158,12 @@ export default function AIReportModule() {
             </div>
           )}
 
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6b7280", fontWeight: 700 }}>Generated SQL</div>
-            <pre style={{ whiteSpace: "pre-wrap", background: "#f9fafb", border: "1px solid #d1d5db", padding: 10, fontSize: 12, overflowX: "auto" }}>{report.sql}</pre>
-          </div>
+          {showSql && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6b7280", fontWeight: 700 }}>Generated SQL</div>
+              <pre style={{ whiteSpace: "pre-wrap", background: "#f9fafb", border: "1px solid #d1d5db", padding: 10, fontSize: 12, overflowX: "auto" }}>{report.sql}</pre>
+            </div>
+          )}
 
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table>

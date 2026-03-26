@@ -8,25 +8,33 @@ import InventoryModule from "./InventoryModule";
 import PatientsModule from "./PatientsModule";
 import PrescriptionsModule from "./PrescriptionsModule";
 import PurchaseOrdersModule from "./PurchaseOrdersModule";
+import ReorderRecommendationModule from "./ReorderRecommendationModule";
 import SuppliersModule from "./SuppliersModule";
 import UsersModule from "./UsersModule";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", icon: "📊" },
   { key: "patients", label: "Patients", icon: "🏥" },
-  { key: "drugs", label: "Drugs", icon: "💊" },
   { key: "inventory", label: "Inventory", icon: "📦" },
   { key: "prescriptions", label: "Prescriptions", icon: "📋" },
   { key: "dispensing", label: "Dispensing", icon: "💉" },
   { key: "suppliers", label: "Suppliers", icon: "🏭" },
   { key: "purchase_orders", label: "Purchase Orders", icon: "🛒" },
+  { key: "reorder_recommendation", label: "Reorder Recommendation", icon: "🔁" },
   { key: "users", label: "Users", icon: "👥" },
   { key: "audit", label: "Audit Log", icon: "🔍" },
   { key: "ai_report", label: "AI Report", icon: "🤖" },
-  { key: "settings", label: "Settings", icon: "⚙️" },
 ];
 
 function riskLevel(d) { return d < 0 ? "expired" : d <= 30 ? "high" : d <= 60 ? "medium" : "low"; }
+
+function riskLabel(risk) {
+  if (risk === "high") return "High Risk";
+  if (risk === "medium") return "Medium Risk";
+  if (risk === "low") return "Low Risk";
+  if (risk === "expired") return "Expired";
+  return risk;
+}
 
 const CARD_CFG = [
   { key: "usable_stock", label: "Usable Stock", icon: "📦", color: "#00d4d4", colorClass: "cyan", module: "inventory" },
@@ -61,12 +69,12 @@ export default function Dashboard() {
   const hasPermission = useCallback((p) => permissions.includes(p), [permissions]);
   const modulePermission = {
     patients: "view_patients",
-    drugs: "view_drugs",
     inventory: "view_inventory",
     prescriptions: "view_prescriptions",
     dispensing: "view_dispensing",
     suppliers: "view_suppliers",
     purchase_orders: "manage_inventory",
+    reorder_recommendation: "view_inventory",
     users: "manage_users",
     audit: "view_audit_logs",
     ai_report: "view_ai_report",
@@ -105,10 +113,10 @@ export default function Dashboard() {
         if (["patients", "prescriptions", "dispensing"].includes(active) && hasPermission("view_patients")) {
           setPatients(await api.getPatients());
         }
-        if (["drugs", "inventory", "prescriptions", "purchase_orders"].includes(active) && hasPermission("view_drugs")) {
+        if (["inventory", "prescriptions", "purchase_orders"].includes(active) && hasPermission("view_drugs")) {
           setDrugs(await api.getDrugs());
         }
-        if (["drugs", "inventory", "dispensing"].includes(active) && hasPermission("view_inventory")) {
+        if (["inventory", "dispensing", "reorder_recommendation"].includes(active) && hasPermission("view_inventory")) {
           setInventoryRows(await api.getInventory());
         }
         if (["inventory", "purchase_orders"].includes(active) && hasPermission("view_suppliers")) {
@@ -270,7 +278,7 @@ export default function Dashboard() {
                           {row.days_left < 0 ? "EXPIRED" : `${row.days_left}d`}
                         </td>
                         <td>{row.quantity_available}</td>
-                        <td><span className={`badge ${row.risk}`}>{row.risk}</span></td>
+                        <td><span className={`badge ${row.risk}`}>{riskLabel(row.risk)}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -323,21 +331,6 @@ export default function Dashboard() {
           <PatientsModule patients={patients} hasPermission={hasPermission}
             onRefresh={async () => { setPatients(await api.getPatients()); await refreshDashboard(); }} />
         )}
-        {active === "drugs" && (
-          <InventoryModule
-            mode="drugs"
-            drugs={drugs}
-            inventoryRows={inventoryRows}
-            suppliers={[]}
-            hasPermission={hasPermission}
-            onRefresh={async () => {
-              const [d, i] = await Promise.all([api.getDrugs(), api.getInventory()]);
-              setDrugs(d);
-              setInventoryRows(i);
-              await refreshDashboard();
-            }}
-          />
-        )}
         {active === "inventory" && (
           <InventoryModule
             mode="inventory"
@@ -366,17 +359,9 @@ export default function Dashboard() {
         )}
         {active === "suppliers" && <SuppliersModule hasPermission={hasPermission} />}
         {active === "purchase_orders" && <PurchaseOrdersModule drugs={drugs} hasPermission={hasPermission} />}
+        {active === "reorder_recommendation" && <ReorderRecommendationModule />}
         {active === "audit" && <AuditModule />}
         {active === "ai_report" && <AIReportModule />}
-        {active === "settings" && (
-          <div className="section" style={{ margin: 24 }}>
-            <div className="section-header"><h3>⚙️ Settings</h3></div>
-            <div className="empty-state">
-              <span className="empty-icon">🔧</span>
-              System settings panel — coming soon
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

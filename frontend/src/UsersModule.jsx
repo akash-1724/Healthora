@@ -13,12 +13,26 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
     const [editTarget, setEditTarget] = useState(null);
     const [resetTarget, setResetTarget] = useState(null);
 
-    const [addForm, setAddForm] = useState({ username: "", password: "", full_name: "", email: "", phone: "", role_id: "", department: "Pharmacy" });
+    const [addForm, setAddForm] = useState({ username: "", password: "", full_name: "", email: "", phone: "", role_id: "", department: "" });
     const [editForm, setEditForm] = useState({ full_name: "", email: "", phone: "", role_id: "", department: "", must_reset_password: false });
     const [newPassword, setNewPassword] = useState("");
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [err, setErr] = useState("");
+
+    const DEPARTMENT_ROLE_MAP = {
+        "Administration": ["inventory_clerk"],
+        "Main Pharmacy": ["pharmacy_manager", "staff_pharmacist"],
+        "Pharmacy": ["pharmacy_manager", "staff_pharmacist"],
+    };
+
+    function allowedRolesForDepartment(department) {
+        const allowedNames = DEPARTMENT_ROLE_MAP[department];
+        if (!allowedNames) {
+            return roles.filter((r) => r.name === "pharmacy_manager" || r.name === "staff_pharmacist");
+        }
+        return roles.filter((r) => allowedNames.includes(r.name));
+    }
 
     const filtered = users.filter((u) => {
         const q = search.toLowerCase();
@@ -49,13 +63,18 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
         setSubmitting(true); setErr("");
         try {
             await api.createUser({ ...addForm, role_id: Number(addForm.role_id), is_active: true });
-            setShowAdd(false); setAddForm({ username: "", password: "", full_name: "", email: "", phone: "", role_id: "", department: "Pharmacy" }); setErrors({});
+            setShowAdd(false); setAddForm({ username: "", password: "", full_name: "", email: "", phone: "", role_id: "", department: "" }); setErrors({});
             await onRefresh();
         } catch (ex) { setErr(ex.message); } finally { setSubmitting(false); }
     }
 
     async function onEditSubmit(e) {
         e.preventDefault(); setSubmitting(true); setErr("");
+        if (!editForm.role_id) {
+            setErr("Select a role");
+            setSubmitting(false);
+            return;
+        }
         try {
             await api.updateUser(editTarget.user_id, {
                 role_id: Number(editForm.role_id),
@@ -86,11 +105,25 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
         try { await api.deleteUser(u.user_id); await onRefresh(); } catch (ex) { setErr(ex.message); }
     }
 
+    const addRoleOptions = allowedRolesForDepartment(addForm.department);
+
     return (
         <div className="section" style={{ margin: 28 }}>
             <div className="section-header">
                 <h3>👥 User Management</h3>
-                {hasPermission("manage_users") && <button className="primary-btn" onClick={() => { setErrors({}); setErr(""); setShowAdd(true); }}>+ Add User</button>}
+                {hasPermission("add_users") && (
+                    <button
+                        className="primary-btn"
+                        onClick={() => {
+                            setErrors({});
+                            setErr("");
+                            setAddForm({ username: "", password: "", full_name: "", email: "", phone: "", role_id: "", department: "" });
+                            setShowAdd(true);
+                        }}
+                    >
+                        + Add User
+                    </button>
+                )}
             </div>
 
             {/* Filters */}
@@ -150,16 +183,16 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
 
             {/* Add User Modal */}
             <Modal open={showAdd} onClose={() => setShowAdd(false)} title="➕ Add New User">
-                <form onSubmit={onAddSubmit}>
+                <form onSubmit={onAddSubmit} autoComplete="off">
                     <div className="form-row">
                         <div>
                             <label>Username *</label>
-                            <input className="input" value={addForm.username} onChange={(e) => setAddForm(p => ({ ...p, username: e.target.value }))} required />
+                            <input className="input" autoComplete="new-username" value={addForm.username} onChange={(e) => setAddForm(p => ({ ...p, username: e.target.value }))} required />
                             {errors.username && <p className="error">{errors.username}</p>}
                         </div>
                         <div>
                             <label>Password * (min 6 chars)</label>
-                            <input className="input" type="password" value={addForm.password} onChange={(e) => setAddForm(p => ({ ...p, password: e.target.value }))} required minLength={6} />
+                            <input className="input" type="password" autoComplete="new-password" value={addForm.password} onChange={(e) => setAddForm(p => ({ ...p, password: e.target.value }))} required minLength={6} />
                             {errors.password && <p className="error">{errors.password}</p>}
                         </div>
                     </div>
@@ -179,18 +212,20 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
                     </div>
                     <div className="form-row">
                         <div>
-                            <label>Role *</label>
-                            <select className="input" value={addForm.role_id} onChange={(e) => setAddForm(p => ({ ...p, role_id: e.target.value }))} required>
-                                <option value="">Select role…</option>
-                                {roles.map((r) => <option key={r.id} value={r.id}>{r.display_name}</option>)}
-                            </select>
-                            {errors.role_id && <p className="error">{errors.role_id}</p>}
-                        </div>
-                        <div>
                             <label>Department *</label>
-                            <select className="input" value={addForm.department} onChange={(e) => setAddForm(p => ({ ...p, department: e.target.value }))} required>
+                            <select className="input" value={addForm.department} onChange={(e) => setAddForm(p => ({ ...p, department: e.target.value, role_id: "" }))} required>
+                                <option value="">Select department…</option>
                                 {departments.map((d) => <option key={d}>{d}</option>)}
                             </select>
+                            {errors.department && <p className="error">{errors.department}</p>}
+                        </div>
+                        <div>
+                            <label>Role *</label>
+                            <select className="input" value={addForm.role_id} onChange={(e) => setAddForm(p => ({ ...p, role_id: e.target.value }))} required disabled={!addForm.department}>
+                                <option value="">{addForm.department ? "Select role…" : "Select department first"}</option>
+                                {addRoleOptions.map((r) => <option key={r.id} value={r.id}>{r.display_name}</option>)}
+                            </select>
+                            {errors.role_id && <p className="error">{errors.role_id}</p>}
                         </div>
                     </div>
                     {err && <div className="error-msg">⚠️ {err}</div>}
@@ -210,13 +245,14 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
                     <input className="input" type="email" value={editForm.email} onChange={(e) => setEditForm(p => ({ ...p, email: e.target.value }))} />
                     <label>Phone</label>
                     <input className="input" value={editForm.phone} onChange={(e) => setEditForm(p => ({ ...p, phone: e.target.value }))} />
+                    <label>Department</label>
+                    <select className="input" value={editForm.department} onChange={(e) => setEditForm(p => ({ ...p, department: e.target.value, role_id: "" }))}>
+                        {departments.map((d) => <option key={d}>{d}</option>)}
+                    </select>
                     <label>Role</label>
                     <select className="input" value={editForm.role_id} onChange={(e) => setEditForm(p => ({ ...p, role_id: e.target.value }))}>
-                        {roles.map((r) => <option key={r.id} value={r.id}>{r.display_name}</option>)}
-                    </select>
-                    <label>Department</label>
-                    <select className="input" value={editForm.department} onChange={(e) => setEditForm(p => ({ ...p, department: e.target.value }))}>
-                        {departments.map((d) => <option key={d}>{d}</option>)}
+                        <option value="">Select role…</option>
+                        {allowedRolesForDepartment(editForm.department).map((r) => <option key={r.id} value={r.id}>{r.display_name}</option>)}
                     </select>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                         <input type="checkbox" checked={Boolean(editForm.must_reset_password)} onChange={(e) => setEditForm(p => ({ ...p, must_reset_password: e.target.checked }))} />

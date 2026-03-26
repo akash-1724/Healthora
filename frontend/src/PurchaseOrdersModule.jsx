@@ -9,7 +9,7 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
     const [error, setError] = useState("");
     const [showModal, setShowModal] = useState(false);
     const [expandedPoId, setExpandedPoId] = useState(null);
-    const [form, setForm] = useState({ supplier_id: "", notes: "", items: [{ drug_id: "", quantity_ordered: 1, unit_price: "" }] });
+    const [form, setForm] = useState({ supplier_id: "", notes: "", items: [{ drug_id: "", quantity_ordered: 1 }] });
 
     async function load() {
         setLoading(true);
@@ -24,7 +24,7 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
     useEffect(() => { load(); }, []);
 
     function addItem() {
-        setForm(p => ({ ...p, items: [...p.items, { drug_id: "", quantity_ordered: 1, unit_price: "" }] }));
+        setForm(p => ({ ...p, items: [...p.items, { drug_id: "", quantity_ordered: 1 }] }));
     }
     function removeItem(idx) {
         setForm(p => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
@@ -44,11 +44,10 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
                 items: form.items.map((i) => ({
                     drug_id: Number(i.drug_id),
                     quantity_ordered: Number(i.quantity_ordered),
-                    unit_price: i.unit_price ? Number(i.unit_price) : null,
                 })),
             });
             setShowModal(false);
-            setForm({ supplier_id: "", notes: "", items: [{ drug_id: "", quantity_ordered: 1, unit_price: "" }] });
+            setForm({ supplier_id: "", notes: "", items: [{ drug_id: "", quantity_ordered: 1 }] });
             setError("");
             await load();
         } catch (err) { setError(err.message); }
@@ -111,13 +110,12 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
                                                     <strong>Ordered Items</strong>
                                                     <div className="table-wrap" style={{ marginTop: 8 }}>
                                                         <table>
-                                                            <thead><tr><th>Drug</th><th>Quantity</th><th>Unit Price</th></tr></thead>
+                                                            <thead><tr><th>Drug</th><th>Quantity</th></tr></thead>
                                                             <tbody>
                                                                 {po.items.map((item) => (
                                                                     <tr key={item.item_id}>
                                                                         <td>{item.drug_name}</td>
                                                                         <td>{item.quantity_ordered}</td>
-                                                                        <td>{item.unit_price == null ? "—" : `₹${item.unit_price}`}</td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>
@@ -154,8 +152,6 @@ export default function PurchaseOrdersModule({ drugs, hasPermission }) {
                             </select>
                             <label>Quantity *</label>
                             <input className="input" type="number" min="1" value={item.quantity_ordered} onChange={(e) => updateItem(idx, "quantity_ordered", e.target.value)} required />
-                            <label>Unit Price (₹)</label>
-                            <input className="input" type="number" min="0" step="0.01" value={item.unit_price} onChange={(e) => updateItem(idx, "unit_price", e.target.value)} />
                             {form.items.length > 1 && <button type="button" className="danger-btn compact" onClick={() => removeItem(idx)}>Remove</button>}
                         </div>
                     ))}

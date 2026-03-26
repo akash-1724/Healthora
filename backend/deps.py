@@ -68,6 +68,8 @@ ROLE_PERMISSIONS = {
         "dispense_drugs",
     },
     "inventory_clerk": {
+        "manage_users",
+        "add_users",
         "view_dashboard_summary",
         "view_drugs",
         "view_inventory",
@@ -87,13 +89,13 @@ ROLE_PERMISSIONS = {
 
 
 ROLE_MODULES = {
-    "system_admin": ["dashboard", "users", "patients", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "audit", "ai_report", "settings"],
-    "chief_medical_officer": ["dashboard", "patients", "drugs", "prescriptions", "dispensing", "ai_report"],
-    "pharmacy_manager": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "ai_report"],
-    "senior_pharmacist": ["dashboard", "drugs", "inventory", "prescriptions", "dispensing"],
-    "staff_pharmacist": ["dashboard", "drugs", "inventory", "dispensing"],
-    "inventory_clerk": ["dashboard", "patients", "drugs", "inventory", "suppliers"],
-    "doctor": ["dashboard", "patients", "drugs", "prescriptions"],
+    "system_admin": ["dashboard", "users", "patients", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "reorder_recommendation", "audit", "ai_report"],
+    "chief_medical_officer": ["dashboard", "patients", "inventory", "prescriptions", "dispensing", "ai_report"],
+    "pharmacy_manager": ["dashboard", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "reorder_recommendation", "ai_report"],
+    "senior_pharmacist": ["dashboard", "inventory", "prescriptions", "dispensing", "reorder_recommendation"],
+    "staff_pharmacist": ["dashboard", "inventory", "dispensing", "reorder_recommendation"],
+    "inventory_clerk": ["dashboard", "users", "patients", "inventory", "suppliers", "reorder_recommendation"],
+    "doctor": ["dashboard", "patients", "inventory", "prescriptions"],
 }
 
 

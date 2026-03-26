@@ -47,6 +47,14 @@ export default function InventoryModule({ drugs, inventoryRows, hasPermission, o
     function daysLeft(expiryDate) { return Math.floor((new Date(expiryDate) - now) / 86400000); }
     function riskLevel(d) { return d < 0 ? "expired" : d <= 30 ? "high" : d <= 60 ? "medium" : "low"; }
 
+    function riskLabel(risk) {
+        if (risk === "high") return "High Risk";
+        if (risk === "medium") return "Medium Risk";
+        if (risk === "low") return "Low Risk";
+        if (risk === "expired") return "Expired";
+        return risk;
+    }
+
     const enrichedBatches = inventoryRows.map((row) => {
         const d = daysLeft(row.expiry_date);
         return { ...row, days_left: d, risk: riskLevel(d) };
@@ -300,9 +308,9 @@ export default function InventoryModule({ drugs, inventoryRows, hasPermission, o
                         </select>
                         <select className="input compact-input" value={batchRiskFilter} onChange={(e) => setBatchRiskFilter(e.target.value)} style={{ marginBottom: 0 }}>
                             <option value="all">All Risk</option>
-                            <option value="high">High (&lt;30d)</option>
-                            <option value="medium">Medium (30–60d)</option>
-                            <option value="low">Low</option>
+                            <option value="high">High Risk (&lt;30d)</option>
+                            <option value="medium">Medium Risk (30–60d)</option>
+                            <option value="low">Low Risk</option>
                             <option value="expired">Expired</option>
                         </select>
                         <input className="input compact-input" placeholder="Search batch/drug…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: 0 }} />
@@ -351,7 +359,7 @@ export default function InventoryModule({ drugs, inventoryRows, hasPermission, o
                                         <td>{row.days_left}</td><td>{row.quantity_available}</td>
                                         <td>₹{row.purchase_price}</td><td>₹{row.selling_price}</td>
                                         <td>{row.supplier_name || "—"}</td>
-                                        <td><span className={`badge ${row.risk === "expired" ? "high" : row.risk === "high" ? "high" : row.risk === "medium" ? "medium" : "good"}`}>{row.risk}</span></td>
+                                        <td><span className={`badge ${row.risk === "expired" ? "high" : row.risk === "high" ? "high" : row.risk === "medium" ? "medium" : "good"}`}>{riskLabel(row.risk)}</span></td>
                                         <td className="actions-cell">
                                             {hasPermission("update_inventory") && !row.is_expired && (
                                                 <button className="secondary-btn compact" onClick={() => { setUpdateQtyTarget(row); setNewQty(String(row.quantity_available)); setShowUpdateQtyModal(true); }}>

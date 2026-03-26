@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["users"])
 DEPARTMENTS = [
     "Cardiology",
     "Neurology",
-    "Pharmacy",
+    "Main Pharmacy",
     "Emergency",
     "Pediatrics",
     "Oncology",
@@ -27,6 +27,28 @@ DEPARTMENTS = [
     "Laboratory",
     "Administration",
 ]
+
+
+DEPARTMENT_ROLE_MAP = {
+    "Administration": {"inventory_clerk"},
+}
+
+
+def _allowed_role_names_for_department(department: str) -> set[str]:
+    if department == "Pharmacy":
+        department = "Main Pharmacy"
+    if department in DEPARTMENT_ROLE_MAP:
+        return DEPARTMENT_ROLE_MAP[department]
+    return {"pharmacy_manager", "staff_pharmacist"}
+
+
+def _validate_department_role(department: str, role_name: str):
+    allowed = _allowed_role_names_for_department(department)
+    if role_name not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Role '{role_name}' is not allowed for department '{department}'",
+        )
 
 
 def to_user_read(user: User) -> UserRead:
@@ -66,7 +88,7 @@ def list_users(db: Session = Depends(get_db)):
     return [to_user_read(user) for user in users]
 
 
-@router.post("/users", response_model=UserRead, dependencies=[Depends(require_permission("manage_users"))])
+@router.post("/users", response_model=UserRead, dependencies=[Depends(require_permission("manage_users")), Depends(require_permission("add_users"))])
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
@@ -78,6 +100,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     role = db.query(Role).filter(Role.id == payload.role_id).first()
     if not role:
         raise HTTPException(status_code=400, detail="Invalid role_id")
+
+    _validate_department_role(payload.department, role.name)
 
     new_user = User(
         username=payload.username,
@@ -104,13 +128,21 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    next_role = user.role
+    next_department = user.department
+
     if payload.role_id is not None:
         role = db.query(Role).filter(Role.id == payload.role_id).first()
         if not role:
             raise HTTPException(status_code=400, detail="Invalid role_id")
-        user.role_id = payload.role_id
+        next_role = role
     if payload.department is not None:
-        user.department = payload.department
+        next_department = payload.department
+
+    _validate_department_role(next_department, next_role.name)
+
+    user.role_id = next_role.id
+    user.department = next_department
     if payload.is_active is not None:
         user.is_active = payload.is_active
     if payload.full_name is not None:

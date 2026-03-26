@@ -38,7 +38,7 @@ export default function AuditModule() {
             {loading ? <p>Loading…</p> : (
                 <div className="table-wrap">
                     <table>
-                        <thead><tr><th>Log ID</th><th>Actor</th><th>Action</th><th>Table</th><th>Record ID</th><th>IP</th><th>Timestamp</th></tr></thead>
+                        <thead><tr><th>Log ID</th><th>Actor</th><th>Action</th><th>Table</th><th>Timestamp</th></tr></thead>
                         <tbody>
                             {logs.map((log) => (
                                 <tr key={log.log_id}>
@@ -46,8 +46,6 @@ export default function AuditModule() {
                                     <td>{log.actor_username || "System"}</td>
                                     <td><code>{log.action}</code></td>
                                     <td>{log.target_table || "—"}</td>
-                                    <td>{log.target_id || "—"}</td>
-                                    <td>{log.ip_address || "—"}</td>
                                     <td>{String(log.timestamp).slice(0, 19).replace("T", " ")}</td>
                                 </tr>
                             ))}
