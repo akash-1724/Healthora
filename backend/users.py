@@ -30,7 +30,7 @@ DEPARTMENTS = [
 
 
 DEPARTMENT_ROLE_MAP = {
-    "Administration": {"inventory_clerk", "system_admin", "chief_medical_officer"},
+    "Administration": {"inventory_clerk", "chief_medical_officer"},
 }
 
 
@@ -43,6 +43,11 @@ def _allowed_role_names_for_department(department: str) -> set[str]:
 
 
 def _validate_department_role(department: str, role_name: str):
+    if role_name == "system_admin":
+        raise HTTPException(
+            status_code=400,
+            detail="System admin can only be created from Register Sysadmin",
+        )
     allowed = _allowed_role_names_for_department(department)
     if role_name not in allowed:
         raise HTTPException(

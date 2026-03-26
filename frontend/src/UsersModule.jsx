@@ -21,7 +21,7 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
     const [err, setErr] = useState("");
 
     const DEPARTMENT_ROLE_MAP = {
-        "Administration": ["inventory_clerk", "system_admin", "chief_medical_officer"],
+        "Administration": ["inventory_clerk", "chief_medical_officer"],
         "Main Pharmacy": ["pharmacy_manager", "staff_pharmacist"],
         "Pharmacy": ["pharmacy_manager", "staff_pharmacist"],
     };
