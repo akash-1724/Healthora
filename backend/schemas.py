@@ -40,21 +40,6 @@ class RegisterSysAdminRequest(BaseModel):
         return v
 
 
-class CreateSysAdminRequest(BaseModel):
-    username: str
-    password: str
-    full_name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-
-    @field_validator("password")
-    @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
-
-
 # ─── Roles & Users ───────────────────────────────────────────────────────────
 
 class RoleRead(BaseModel):

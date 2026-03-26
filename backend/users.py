@@ -93,7 +93,7 @@ def list_users(db: Session = Depends(get_db)):
     return [to_user_read(user) for user in users]
 
 
-@router.post("/users", response_model=UserRead, dependencies=[Depends(require_permission("manage_users")), Depends(require_permission("add_users"))])
+@router.post("/users", response_model=UserRead, dependencies=[Depends(require_permission("manage_users"))])
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:

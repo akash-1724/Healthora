@@ -55,7 +55,6 @@ Public:
 - `POST /api/login`
 - `GET /api/setup-status`
 - `POST /api/register-sysadmin` (one-time bootstrap only)
-- `POST /api/create-sysadmin` (system_admin only, for already initialized systems)
 
 Protected (Bearer token required):
 

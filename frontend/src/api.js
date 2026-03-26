@@ -59,7 +59,6 @@ export const api = {
   login: (username, password) => request("/api/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   setupStatus: () => request("/api/setup-status"),
   registerSysadmin: (payload) => request("/api/register-sysadmin", { method: "POST", body: JSON.stringify(payload) }),
-  createSysadmin: (payload) => request("/api/create-sysadmin", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/api/me"),
 
   // ── Dashboard ─────────────────────────────────────────────────────────
