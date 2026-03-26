@@ -118,6 +118,47 @@ def _forecast(values: list[float], horizon: int, slope: float, volatility: float
     return rows
 
 
+def _predict_values(values: list[float], horizon: int) -> list[float]:
+    if horizon <= 0:
+        return []
+    slope = _trend_slope(values)
+    volatility = _volatility(values)
+    base = float(mean(values[-14:])) if values else 0.0
+    preds: list[float] = []
+    for i in range(1, horizon + 1):
+        pred = max(0.0, base + (slope * i))
+        if volatility > 0.9:
+            pred = max(0.0, (pred * 0.7) + (base * 0.3))
+        preds.append(float(pred))
+    return preds
+
+
+def _real_error_metrics(values: list[float]) -> tuple[float, float, float]:
+    if len(values) < 20:
+        return 0.0, 0.0, 0.0
+
+    split = max(14, int(len(values) * 0.8))
+    if split >= len(values):
+        split = len(values) - 1
+    train = values[:split]
+    test = values[split:]
+    if not train or not test:
+        return 0.0, 0.0, 0.0
+
+    preds = _predict_values(train, len(test))
+    errors = [abs(a - p) for a, p in zip(test, preds)]
+    mae = float(mean(errors)) if errors else 0.0
+    rmse = float(np.sqrt(np.mean([(a - p) ** 2 for a, p in zip(test, preds)]))) if errors else 0.0
+
+    ape_terms = []
+    for actual, pred in zip(test, preds):
+        if actual > 0:
+            ape_terms.append(abs((actual - pred) / actual) * 100.0)
+    mape = float(mean(ape_terms)) if ape_terms else 0.0
+
+    return round(mae, 2), round(rmse, 2), round(min(999.0, mape), 2)
+
+
 def _model_family(points: int) -> str:
     if points < 45:
         return "ARIMA"
@@ -207,7 +248,8 @@ def _build_payload(db: Session) -> dict:
     for b in batches:
         stock_by_drug[b.drug_id] += int(b.quantity_available or 0)
         if b.supplier_id and b.drug_id not in supplier_hint_by_drug:
-            supplier_hint_by_drug[b.drug_id] = supplier_map.get(b.supplier_id).name if supplier_map.get(b.supplier_id) else None
+            supplier = supplier_map.get(b.supplier_id)
+            supplier_hint_by_drug[b.drug_id] = supplier.name if supplier else None
 
     medicines: list[dict] = []
     outliers_clipped = 0
@@ -233,6 +275,7 @@ def _build_payload(db: Session) -> dict:
 
         fc7 = _forecast(cleaned, 7, slope, volatility)
         fc30 = _forecast(cleaned, 30, slope, volatility)
+        mae, rmse, mape = _real_error_metrics(cleaned)
 
         avg_daily = float(mean(cleaned[-30:])) if cleaned else 0.0
         avg_usage_all.append(avg_daily)
@@ -256,6 +299,9 @@ def _build_payload(db: Session) -> dict:
                 "model_family": model_family,
                 "forecast7": fc7,
                 "forecast30": fc30,
+                "mae": mae,
+                "rmse": rmse,
+                "mape": mape,
                 "avg_daily": avg_daily,
                 "growth_rate": growth_rate,
                 "current_stock": current_stock,
@@ -341,9 +387,9 @@ def _build_payload(db: Session) -> dict:
                 "seasonality_strength": round(row["seasonality"], 3),
                 "demand_variance": round(volatility, 3),
                 "model_family": row["model_family"],
-                "mae_estimate": round(max(0.3, volatility * 7), 2),
-                "rmse_estimate": round(max(0.4, volatility * 9), 2),
-                "mape_estimate": round(min(95.0, max(2.0, volatility * 95.0)), 2),
+                "mae_estimate": row["mae"],
+                "rmse_estimate": row["rmse"],
+                "mape_estimate": row["mape"],
                 "prediction_growth_rate": round(growth_rate, 3),
                 "stock_turnover_ratio": round(stock_turnover_ratio, 3),
                 "movement_status": movement,
