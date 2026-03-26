@@ -31,9 +31,6 @@ def setup_status(db: Session = Depends(get_db)):
 
 @router.post("/register-sysadmin", response_model=LoginResponse)
 def register_sysadmin(payload: RegisterSysAdminRequest, db: Session = Depends(get_db)):
-    if db.query(User).count() > 0:
-        raise HTTPException(status_code=403, detail="Initial setup already completed")
-
     expected_bootstrap = os.getenv("SYSADMIN_BOOTSTRAP_KEY")
     if expected_bootstrap and payload.bootstrap_key != expected_bootstrap:
         raise HTTPException(status_code=403, detail="Invalid hospital key")

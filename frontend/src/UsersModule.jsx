@@ -21,7 +21,7 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
     const [err, setErr] = useState("");
 
     const DEPARTMENT_ROLE_MAP = {
-        "Administration": ["inventory_clerk"],
+        "Administration": ["inventory_clerk", "system_admin", "chief_medical_officer"],
         "Main Pharmacy": ["pharmacy_manager", "staff_pharmacist"],
         "Pharmacy": ["pharmacy_manager", "staff_pharmacist"],
     };
@@ -29,7 +29,7 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
     function allowedRolesForDepartment(department) {
         const allowedNames = DEPARTMENT_ROLE_MAP[department];
         if (!allowedNames) {
-            return roles.filter((r) => r.name === "pharmacy_manager" || r.name === "staff_pharmacist");
+            return roles.filter((r) => r.name === "pharmacy_manager" || r.name === "staff_pharmacist" || r.name === "doctor");
         }
         return roles.filter((r) => allowedNames.includes(r.name));
     }
@@ -111,7 +111,7 @@ export default function UsersModule({ users, roles, departments, onRefresh, hasP
         <div className="section" style={{ margin: 28 }}>
             <div className="section-header">
                 <h3>👥 User Management</h3>
-                {hasPermission("add_users") && (
+                {hasPermission("manage_users") && (
                     <button
                         className="primary-btn"
                         onClick={() => {

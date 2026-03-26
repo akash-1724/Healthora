@@ -30,7 +30,7 @@ DEPARTMENTS = [
 
 
 DEPARTMENT_ROLE_MAP = {
-    "Administration": {"inventory_clerk"},
+    "Administration": {"inventory_clerk", "system_admin", "chief_medical_officer"},
 }
 
 
@@ -39,7 +39,7 @@ def _allowed_role_names_for_department(department: str) -> set[str]:
         department = "Main Pharmacy"
     if department in DEPARTMENT_ROLE_MAP:
         return DEPARTMENT_ROLE_MAP[department]
-    return {"pharmacy_manager", "staff_pharmacist"}
+    return {"pharmacy_manager", "staff_pharmacist", "doctor"}
 
 
 def _validate_department_role(department: str, role_name: str):

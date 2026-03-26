@@ -49,10 +49,6 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    if (mode === "register" && !setupRequired) {
-      setError("Sysadmin registration is only available during first-time setup. Use an existing admin account and create users from Dashboard > Users.");
-      return;
-    }
     setLoading(true);
     try {
       const data = mode === "register"
@@ -99,7 +95,6 @@ export default function Login() {
               type="button"
               className={`secondary-btn compact ${mode === "login" ? "active-btn" : ""}`}
               onClick={() => setMode("login")}
-              disabled={setupRequired}
             >
               Sign In
             </button>
@@ -107,19 +102,10 @@ export default function Login() {
               type="button"
               className={`secondary-btn compact ${mode === "register" ? "active-btn" : ""}`}
               onClick={() => setMode("register")}
-              disabled={!setupRequired}
             >
               Register Sysadmin
             </button>
           </div>
-
-          {!setupRequired && mode === "login" && (
-            <div className="login-field" style={{ marginTop: -2 }}>
-              <div className="error-msg" style={{ background: "#eef2ff", borderColor: "#c7d2fe", color: "#3730a3" }}>
-                Initial sysadmin setup is already completed for this database.
-              </div>
-            </div>
-          )}
 
           <div className="login-field">
             <label>Username</label>
@@ -142,7 +128,7 @@ export default function Login() {
               </div>
               <div className="login-field">
                 <label>Hospital Key</label>
-                <input className="input" value={bootstrapKey} readOnly />
+                <input className="input" value={bootstrapKey} onChange={(e) => setBootstrapKey(e.target.value)} placeholder="Optional bootstrap key" />
               </div>
             </>
           )}

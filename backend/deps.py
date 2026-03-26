@@ -68,8 +68,6 @@ ROLE_PERMISSIONS = {
         "dispense_drugs",
     },
     "inventory_clerk": {
-        "manage_users",
-        "add_users",
         "view_dashboard_summary",
         "view_drugs",
         "view_inventory",
@@ -94,7 +92,7 @@ ROLE_MODULES = {
     "pharmacy_manager": ["dashboard", "inventory", "prescriptions", "dispensing", "suppliers", "purchase_orders", "reorder_recommendation", "ai_report"],
     "senior_pharmacist": ["dashboard", "inventory", "prescriptions", "dispensing", "reorder_recommendation"],
     "staff_pharmacist": ["dashboard", "inventory", "dispensing", "reorder_recommendation"],
-    "inventory_clerk": ["dashboard", "users", "patients", "inventory", "suppliers", "reorder_recommendation"],
+    "inventory_clerk": ["dashboard", "patients", "inventory", "suppliers", "reorder_recommendation"],
     "doctor": ["dashboard", "patients", "inventory", "prescriptions"],
 }
 
