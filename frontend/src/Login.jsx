@@ -70,16 +70,6 @@ export default function Login() {
     }
   }
 
-  const hints = [
-    { user: "a.sharma", pass: "$123q", role: "System Admin" },
-    { user: "j.doe", pass: "$123q", role: "Chief Medical Officer" },
-    { user: "pharm.chief", pass: "$123q", role: "Pharmacy Manager" },
-    { user: "s.patel", pass: "$123q", role: "Senior Pharmacist" },
-    { user: "r.jones", pass: "$123q", role: "Staff Pharmacist" },
-    { user: "inv.clerk1", pass: "$123q", role: "Clerk" },
-    { user: "doctor1", pass: "doctor123", role: "Doctor" },
-  ];
-
   return (
     <div className="login-root">
       <div className="login-card">
@@ -174,35 +164,6 @@ export default function Login() {
           </label>
         </form>
 
-        {mode === "login" && (
-          <div className="login-hint">
-            <div style={{ fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 11, marginBottom: 10, color: "#374151" }}>
-              Demo Credentials (click to autofill)
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
-              {hints.map((h) => (
-                <div
-                  key={h.user}
-                  onClick={() => { setUsername(h.user); setPassword(h.pass); }}
-                  style={{
-                    cursor: "pointer",
-                    background: "#fff",
-                    border: "2px solid #d1d5db",
-                    padding: "6px 10px",
-                    boxShadow: "2px 2px 0 #d1d5db",
-                    transition: "all 0.12s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px,-2px)"; e.currentTarget.style.boxShadow = "4px 4px 0 #0d0d0d"; e.currentTarget.style.borderColor = "#0d0d0d"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "2px 2px 0 #d1d5db"; e.currentTarget.style.borderColor = "#d1d5db"; }}
-                  title={`Login as ${h.role}`}
-                >
-                  <div style={{ fontWeight: 700, fontSize: 13, color: "#0d0d0d" }}>{h.user}<span style={{ color: "#9ca3af", fontWeight: 400 }}> / {h.pass}</span></div>
-                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{h.role}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
