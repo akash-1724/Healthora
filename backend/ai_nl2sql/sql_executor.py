@@ -50,6 +50,8 @@ def is_safe_sql(sql: str) -> tuple[bool, str]:
 
 
 def _ensure_limit(sql: str, max_rows: int) -> str:
+    if max_rows <= 0:
+        return re.sub(r"\s+LIMIT\s+\d+\s*;?\s*$", "", sql, flags=re.IGNORECASE).strip()
     if re.search(r"\blimit\b", sql, flags=re.IGNORECASE):
         return sql
     return sql.rstrip(" ;") + f" LIMIT {max_rows}"
@@ -98,7 +100,7 @@ def execute_with_retry(
     best_path: dict,
     max_attempts: int = 3,
 ) -> dict:
-    current_sql = _ensure_limit(sql, int(os.getenv("AI_QUERY_MAX_ROWS", "200")))
+    current_sql = _ensure_limit(sql, 0)
     timeout_ms = int(os.getenv("AI_SQL_TIMEOUT_MS", "8000"))
     last_error = None
 
@@ -108,7 +110,7 @@ def execute_with_retry(
             if attempt >= max_attempts:
                 return {"success": False, "error": reason, "technical_error": reason}
             current_sql = fix_sql_with_llm(original_query, current_sql, reason, schema, best_path)
-            current_sql = _ensure_limit(current_sql, int(os.getenv("AI_QUERY_MAX_ROWS", "200")))
+            current_sql = _ensure_limit(current_sql, 0)
             continue
 
         try:
@@ -130,7 +132,7 @@ def execute_with_retry(
             if attempt >= max_attempts:
                 break
             current_sql = fix_sql_with_llm(original_query, current_sql, last_error, schema, best_path)
-            current_sql = _ensure_limit(current_sql, int(os.getenv("AI_QUERY_MAX_ROWS", "200")))
+            current_sql = _ensure_limit(current_sql, 0)
 
     return {
         "success": False,

@@ -38,7 +38,7 @@ function riskLabel(risk) {
 
 const CARD_CFG = [
   { key: "usable_stock", label: "Usable Stock", icon: "📦", color: "#00d4d4", colorClass: "cyan", module: "inventory" },
-  { key: "expiry_risk", label: "Expiry Risk 90d", icon: "⏳", color: "#ffe55c", colorClass: "amber", module: null },
+  { key: "expiry_risk", label: "Expiry Risk 90d", icon: "⏳", color: "#ffe55c", colorClass: "amber", module: "inventory" },
   { key: "low_stock_alerts", label: "Low Stock Drugs", icon: "⚠️", color: "#ef233c", colorClass: "red", module: "inventory" },
   { key: "total_patients", label: "Active Patients", icon: "👤", color: "#8338ec", colorClass: "purple", module: "patients" },
 ];

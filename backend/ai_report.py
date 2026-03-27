@@ -316,40 +316,27 @@ def _export_pdf(payload: dict) -> Path:
 
     pdf = canvas.Canvas(str(file_path), pagesize=A4)
     pdf.setTitle(payload.get("title", "AI Report"))
-    pdf.setFont("Helvetica-Bold", 16)
-    pdf.drawString(40, 810, payload.get("title", "AI Report"))
+    pdf.setFont("Helvetica-Bold", 15)
+    pdf.drawString(40, 810, "AI Query Report")
 
     pdf.setFont("Helvetica", 10)
     y = 790
     y = _pdf_line(pdf, f"Generated: {payload.get('generated_at', '')}", 40, y)
     y = _pdf_line(pdf, f"Question: {payload.get('question', '')}", 40, y)
-    y = _pdf_line(pdf, f"Rows: {payload.get('count', 0)}", 40, y)
-    y -= 10
-    y = _pdf_line(pdf, "Executive Summary:", 40, y)
-    for part in str(payload.get("summary_text", "")).split("."):
-        part = part.strip()
-        if part:
-            y = _pdf_line(pdf, f"- {part}.", 50, y)
+    y = _pdf_line(pdf, f"Total Rows: {payload.get('count', 0)}", 40, y)
 
-    y -= 6
-    y = _pdf_line(pdf, "KPIs:", 40, y)
-    for kpi in payload.get("kpis", []):
-        y = _pdf_line(pdf, f"- {kpi.get('label')}: {kpi.get('value')}", 50, y)
-
-    y -= 6
-    y = _pdf_line(pdf, "Charts in preview:", 40, y)
-    for chart in payload.get("charts", []):
-        y = _pdf_line(pdf, f"- {chart.get('title', 'Chart')}", 50, y)
-
-    y -= 10
-    y = _pdf_line(pdf, "Result sample:", 40, y)
     columns = payload.get("columns", [])
-    rows = payload.get("rows", [])[:20]
+    rows = payload.get("rows", [])
     if columns:
-        y = _pdf_line(pdf, " | ".join(str(c) for c in columns), 50, y)
+        y -= 8
+        pdf.setFont("Helvetica-Bold", 9)
+        header_text = " | ".join(str(c) for c in columns)
+        y = _pdf_line(pdf, header_text[:170], 40, y)
+        pdf.setFont("Helvetica", 9)
+        y = _pdf_line(pdf, "-" * min(len(header_text), 120), 40, y)
         for row in rows:
-            row_text = " | ".join(str(v) for v in row)
-            y = _pdf_line(pdf, row_text[:170], 50, y)
+            row_text = " | ".join(str(v if v is not None else "") for v in row)
+            y = _pdf_line(pdf, row_text[:170], 40, y)
 
     pdf.save()
     return file_path

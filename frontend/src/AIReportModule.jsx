@@ -75,8 +75,9 @@ export default function AIReportModule() {
   const [report, setReport] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [format, setFormat] = useState("pdf");
+  const [showSql, setShowSql] = useState(false);
 
-  const previewRows = useMemo(() => (result?.rows || []).slice(0, 150), [result]);
+  const previewRows = useMemo(() => (result?.rows || []), [result]);
 
   async function runQuery() {
     if (!question.trim()) return;
@@ -85,6 +86,7 @@ export default function AIReportModule() {
     setResult(null);
     setSearched(true);
     setReport(null);
+    setShowSql(false);
 
     try {
       const data = await api.aiReportQuery(question.trim());
@@ -148,9 +150,10 @@ export default function AIReportModule() {
         />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button className="primary-btn" onClick={runQuery} disabled={loading}>{loading ? "Running..." : "Run Query"}</button>
-          <button className="secondary-btn" onClick={generateDownloadableReport} disabled={loading || !result}>{loading ? "Preparing..." : "Prepare Download"}</button>
           {result?.cached && <span className="badge good">Cached (RAG)</span>}
           {result && <span className="badge medium">{result.count} rows</span>}
+          {result && <button className="secondary-btn" onClick={() => setShowSql((prev) => !prev)}>{showSql ? "Hide SQL Query" : "Show SQL Query"}</button>}
+          {result && <button className="secondary-btn" onClick={generateDownloadableReport} disabled={loading}>{loading ? "Preparing..." : "Prepare Download"}</button>}
         </div>
       </div>
 
@@ -162,10 +165,12 @@ export default function AIReportModule() {
         <>
           <ChartsPanel columns={result.columns} rows={result.rows} />
 
-          <div style={{ marginTop: 12, background: "#111827", color: "#e5e7eb", padding: 12, borderRadius: 8, fontFamily: "monospace", fontSize: 12 }}>
-            <div style={{ color: "#86efac", marginBottom: 6, fontSize: 11 }}>Generated SQL</div>
-            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{result.sql}</pre>
-          </div>
+          {showSql && (
+            <div style={{ marginTop: 12, background: "#111827", color: "#e5e7eb", padding: 12, borderRadius: 8, fontFamily: "monospace", fontSize: 12 }}>
+              <div style={{ color: "#86efac", marginBottom: 6, fontSize: 11 }}>Generated SQL</div>
+              <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{result.sql}</pre>
+            </div>
+          )}
 
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table>
