@@ -13,6 +13,7 @@ _MODEL = None
 SIMILARITY_THRESHOLD = float(os.getenv("AI_RAG_THRESHOLD", "0.92"))
 MAX_STORE_SIZE = int(os.getenv("AI_RAG_MAX_STORE_SIZE", "500"))
 RAG_STORE_PATH = Path(__file__).resolve().parent.parent / "ai_rag_store.json"
+DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
 
 
 def _model() -> SentenceTransformer:
@@ -51,11 +52,18 @@ def save_store(store: list[dict]) -> None:
 
 def find_similar_query(query: str, store: list[dict], schema: dict, threshold: float = SIMILARITY_THRESHOLD) -> tuple[dict | None, float]:
     if not store:
+        if DEBUG:
+            print("[RAG] empty store")
         return None, 0.0
 
     current_schema_hash = compute_schema_hash(schema)
     compatible_store = [entry for entry in store if entry.get("schema_hash") == current_schema_hash]
+    stale_count = len(store) - len(compatible_store)
+    if DEBUG and stale_count > 0:
+        print(f"[RAG] ignoring stale entries due to schema mismatch: {stale_count}")
     if not compatible_store:
+        if DEBUG:
+            print("[RAG] no schema-compatible entries")
         return None, 0.0
 
     normalized_query = normalize_query_for_similarity(query)
@@ -69,7 +77,11 @@ def find_similar_query(query: str, store: list[dict], schema: dict, threshold: f
     best_score = float(similarities[best_idx])
 
     if best_score >= threshold:
+        if DEBUG:
+            print(f"[RAG] hit score={best_score:.4f} query='{compatible_store[best_idx].get('query', '')}'")
         return compatible_store[best_idx], best_score
+    if DEBUG:
+        print(f"[RAG] miss best_score={best_score:.4f} threshold={threshold:.4f}")
     return None, best_score
 
 
@@ -87,6 +99,8 @@ def save_successful_query(query: str, best_path: dict, sql: str, result_count: i
             entry["last_used"] = datetime.utcnow().isoformat()
             entry["use_count"] = entry.get("use_count", 1) + 1
             save_store(store)
+            if DEBUG:
+                print(f"[RAG] updated existing entry query='{query}'")
             return
 
     store.append(
@@ -103,6 +117,8 @@ def save_successful_query(query: str, best_path: dict, sql: str, result_count: i
         }
     )
     save_store(store)
+    if DEBUG:
+        print(f"[RAG] saved new entry query='{query}'")
 
 
 def get_rag_stats() -> dict:

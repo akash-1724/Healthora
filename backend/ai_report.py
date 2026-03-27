@@ -15,6 +15,7 @@ from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
 from ai_nl2sql import build_graph, clear_store, execute_with_retry, generate_sql, get_rag_stats, introspect_database, load_store, run_pipeline
+from ai_nl2sql.schema_linker import get_relevant_tables
 from audit import log_action
 from database import get_db
 from deps import get_current_user, require_permission
@@ -45,6 +46,14 @@ class QueryResponse(BaseModel):
     count: int
     success: bool
     cached: bool = False
+
+
+class QueryDebugResponse(BaseModel):
+    question: str
+    relevant_tables: list[str]
+    best_path: list[str]
+    sql: str
+    success: bool
 
 
 def _ensure_loaded() -> tuple[dict, object]:
@@ -392,6 +401,32 @@ def ai_report_query(payload: QueryRequest, db: Session = Depends(get_db), curren
         count=result["count"],
         success=True,
         cached=cached,
+    )
+
+
+@router.post("/query-debug", response_model=QueryDebugResponse, dependencies=[Depends(require_permission("view_ai_report"))])
+def ai_report_query_debug(payload: QueryRequest):
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    schema, graph = _ensure_loaded()
+    relevant_tables = get_relevant_tables(question, schema, top_k=6)
+    best_path = run_pipeline(question, schema, graph)
+    if not best_path:
+        raise HTTPException(status_code=422, detail="Could not map this question to database tables")
+
+    try:
+        sql = generate_sql(question, best_path, schema, graph)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return QueryDebugResponse(
+        question=question,
+        relevant_tables=relevant_tables,
+        best_path=best_path.get("path", []),
+        sql=sql,
+        success=True,
     )
 
 

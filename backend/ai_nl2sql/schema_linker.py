@@ -1,7 +1,11 @@
+import os
+
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 _MODEL = None
+_DESC_EMBEDDINGS = {}
+DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
 
 
 def _model() -> SentenceTransformer:
@@ -10,7 +14,33 @@ def _model() -> SentenceTransformer:
         _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
     return _MODEL
 
+
 TABLE_DESCRIPTIONS = {
+    # hospital-v2 schema
+    "hospital": "hospital institution facility registration",
+    "department": "hospital department unit ward",
+    "role": "user role permission access",
+    "User": "system user staff pharmacist doctor login",
+    "patient": "patient personal medical records demographics",
+    "doctor": "doctor physician specialist",
+    "encounter": "hospital visit admission consultation encounter",
+    "manufacturer": "drug manufacturer company producer",
+    "drug": "medicine drug catalog",
+    "drug_batch": "drug inventory batch stock expiry prices",
+    "pharmacy_store": "pharmacy store counter location",
+    "store_inventory": "store stock inventory quantity",
+    "supplier": "supplier vendor procurement",
+    "purchase_order": "purchase order to supplier",
+    "purchase_order_item": "ordered drug items quantities",
+    "stock_transaction": "stock movement in out transaction",
+    "prescription": "doctor prescription",
+    "prescription_detail": "prescribed drug dosage frequency duration",
+    "dispense": "dispensed prescription by pharmacist",
+    "dispense_item": "dispensed item batch quantity",
+    "pharmacy_bill": "pharmacy billing payment invoice",
+    "pharmacy_bill_item": "billed drug quantity price",
+    "controlled_drug_log": "controlled substance narcotic log",
+    # legacy app schema
     "roles": "role permissions access control",
     "users": "staff users pharmacists admins",
     "patients": "patient demographic and medical profile",
@@ -27,24 +57,60 @@ TABLE_DESCRIPTIONS = {
 }
 
 
+V2_PRIORITY_TABLES = {
+    "hospital",
+    "department",
+    "role",
+    "User",
+    "patient",
+    "doctor",
+    "encounter",
+    "manufacturer",
+    "drug",
+    "drug_batch",
+    "pharmacy_store",
+    "store_inventory",
+    "supplier",
+    "purchase_order",
+    "purchase_order_item",
+    "stock_transaction",
+    "prescription",
+    "prescription_detail",
+    "dispense",
+    "dispense_item",
+    "pharmacy_bill",
+    "pharmacy_bill_item",
+    "controlled_drug_log",
+}
+
+
 def detect_entity_tables(query: str) -> list[str]:
     q = query.lower()
     entity_map = {
-        "patient": ["patients"],
-        "drug": ["drugs", "drug_batches"],
-        "medicine": ["drugs", "drug_batches"],
-        "stock": ["drug_batches"],
-        "inventory": ["drug_batches"],
-        "supplier": ["suppliers", "purchase_orders", "purchase_order_items"],
-        "purchase": ["purchase_orders", "purchase_order_items"],
-        "order": ["purchase_orders", "purchase_order_items"],
-        "prescription": ["prescriptions", "prescription_items"],
-        "dispense": ["dispensing_records"],
-        "sale": ["dispensing_records", "drug_batches", "drugs"],
-        "revenue": ["dispensing_records", "drug_batches", "drugs"],
+        "patient": ["patient", "patients"],
+        "doctor": ["doctor", "prescription", "prescriptions"],
+        "pharmacist": ["User", "users", "dispense", "dispensing_records"],
+        "user": ["User", "users", "role", "roles"],
+        "department": ["department", "encounter"],
+        "hospital": ["hospital", "department"],
+        "encounter": ["encounter", "patient", "doctor"],
+        "admission": ["encounter", "patient", "department"],
+        "medicine": ["drug", "drug_batch", "drugs", "drug_batches"],
+        "drug": ["drug", "drug_batch", "drugs", "drug_batches"],
+        "batch": ["drug_batch", "drug_batches", "dispense_item", "dispensing_records"],
+        "stock": ["store_inventory", "stock_transaction", "drug_batch", "drug_batches"],
+        "inventory": ["store_inventory", "drug_batch", "drug_batches"],
+        "supplier": ["supplier", "suppliers", "purchase_order", "purchase_orders"],
+        "order": ["purchase_order", "purchase_order_item", "purchase_orders", "purchase_order_items"],
+        "purchase": ["purchase_order", "purchase_order_item", "purchase_orders", "purchase_order_items"],
+        "prescription": ["prescription", "prescription_detail", "prescriptions", "prescription_items"],
+        "dispense": ["dispense", "dispense_item", "dispensing_records"],
+        "billing": ["pharmacy_bill", "pharmacy_bill_item"],
+        "bill": ["pharmacy_bill", "pharmacy_bill_item"],
+        "controlled": ["controlled_drug_log"],
+        "narcotic": ["controlled_drug_log"],
         "audit": ["audit_logs"],
         "notification": ["notifications"],
-        "user": ["users", "roles"],
     }
 
     forced = []
@@ -54,19 +120,34 @@ def detect_entity_tables(query: str) -> list[str]:
     return sorted(set(forced))
 
 
-def get_relevant_tables(query: str, schema: dict, top_k: int = 5) -> list[str]:
-    forced_tables = [table for table in detect_entity_tables(query) if table in schema]
+def _v2_boost(table: str, has_v2_tables: bool) -> float:
+    if not has_v2_tables:
+        return 0.0
+    return 0.06 if table in V2_PRIORITY_TABLES else 0.0
+
+
+def get_relevant_tables(query: str, schema: dict, top_k: int = 6) -> list[str]:
+    available = set(schema.keys())
+    forced_tables = [table for table in detect_entity_tables(query) if table in available]
+    has_v2_tables = any(table in available for table in V2_PRIORITY_TABLES)
 
     model = _model()
     query_embedding = model.encode([query])
     scored = []
     for table in schema.keys():
         description = TABLE_DESCRIPTIONS.get(table, table)
-        table_embedding = model.encode([description])
+        if description not in _DESC_EMBEDDINGS:
+            _DESC_EMBEDDINGS[description] = model.encode([description])
+        table_embedding = _DESC_EMBEDDINGS[description]
         similarity = float(cosine_similarity(query_embedding, table_embedding)[0][0])
+        similarity += _v2_boost(table, has_v2_tables)
         scored.append((table, similarity))
 
     scored.sort(key=lambda item: item[1], reverse=True)
+
+    score_map = {table: score for table, score in scored}
+    if len(forced_tables) > top_k:
+        forced_tables = sorted(forced_tables, key=lambda t: score_map.get(t, -1.0), reverse=True)[:top_k]
 
     final_tables = list(forced_tables)
     for table, _ in scored:
@@ -74,5 +155,10 @@ def get_relevant_tables(query: str, schema: dict, top_k: int = 5) -> list[str]:
             break
         if table not in final_tables:
             final_tables.append(table)
+
+    if DEBUG:
+        print(f"[LINKER] forced={forced_tables}")
+        print(f"[LINKER] final={final_tables}")
+        print(f"[LINKER] top_scored={scored[:8]}")
 
     return final_tables

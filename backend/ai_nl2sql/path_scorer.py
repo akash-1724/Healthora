@@ -1,7 +1,10 @@
+import os
+
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 _MODEL = None
+DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
 
 
 def _model() -> SentenceTransformer:
@@ -10,7 +13,31 @@ def _model() -> SentenceTransformer:
         _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
     return _MODEL
 
+
 TABLE_DESCRIPTIONS = {
+    "hospital": "hospital institution facility",
+    "department": "hospital department unit ward",
+    "role": "role permissions access",
+    "User": "system user staff pharmacist doctor",
+    "patient": "patient medical records",
+    "doctor": "doctor physician specialist",
+    "encounter": "hospital visit admission encounter",
+    "manufacturer": "drug manufacturer",
+    "drug": "medicine drug catalog",
+    "drug_batch": "drug batch stock expiry",
+    "pharmacy_store": "pharmacy counter store",
+    "store_inventory": "store inventory stock",
+    "supplier": "supplier vendor procurement",
+    "purchase_order": "purchase order",
+    "purchase_order_item": "purchase order items",
+    "stock_transaction": "stock movement transaction",
+    "prescription": "doctor prescription",
+    "prescription_detail": "prescribed drug details",
+    "dispense": "dispensing event",
+    "dispense_item": "dispensed batch quantity",
+    "pharmacy_bill": "pharmacy bill",
+    "pharmacy_bill_item": "bill line items",
+    "controlled_drug_log": "controlled substance log",
     "roles": "role permissions access control",
     "users": "staff users pharmacists admins",
     "patients": "patient demographic and medical profile",
@@ -30,16 +57,18 @@ TABLE_DESCRIPTIONS = {
 def score_keyword_boost(query: str, path: list[str]) -> float:
     query_words = set(query.lower().split())
     keyword_map = {
-        "prescription": {"prescriptions", "prescription_items"},
-        "prescribed": {"prescriptions", "prescription_items"},
-        "dispense": {"dispensing_records"},
-        "dispensed": {"dispensing_records"},
-        "sale": {"dispensing_records", "drugs", "drug_batches"},
-        "revenue": {"dispensing_records", "drugs", "drug_batches"},
-        "stock": {"drug_batches"},
-        "expiry": {"drug_batches"},
-        "supplier": {"suppliers", "purchase_orders", "purchase_order_items"},
-        "order": {"purchase_orders", "purchase_order_items"},
+        "prescription": {"prescription", "prescription_detail", "prescriptions", "prescription_items"},
+        "prescribed": {"prescription", "prescription_detail", "prescriptions", "prescription_items"},
+        "dispense": {"dispense", "dispense_item", "dispensing_records"},
+        "dispensed": {"dispense", "dispense_item", "dispensing_records"},
+        "sale": {"dispense", "dispense_item", "dispensing_records", "drug", "drugs"},
+        "revenue": {"pharmacy_bill", "pharmacy_bill_item", "dispensing_records"},
+        "stock": {"store_inventory", "stock_transaction", "drug_batch", "drug_batches"},
+        "expiry": {"drug_batch", "drug_batches"},
+        "supplier": {"supplier", "suppliers", "purchase_order", "purchase_orders"},
+        "order": {"purchase_order", "purchase_order_item", "purchase_orders", "purchase_order_items"},
+        "doctor": {"doctor", "prescription", "prescriptions", "encounter"},
+        "department": {"department", "encounter"},
         "audit": {"audit_logs"},
         "notification": {"notifications"},
     }
@@ -52,7 +81,30 @@ def score_keyword_boost(query: str, path: list[str]) -> float:
         if any(table in path for table in tables):
             boost += 0.12
 
-    return min(boost, 0.3)
+    return min(boost, 0.35)
+
+
+def score_domain_modifier(query: str, path: list[str]) -> float:
+    q = query.lower()
+    path_set = set(path)
+    modifier = 0.0
+
+    if "department" in q and ({"dispense", "dispense_item", "dispensing_records", "prescription", "prescriptions"} & path_set):
+        if "User" in path_set or "users" in path_set:
+            modifier -= 0.25
+        if "doctor" in path_set or "encounter" in path_set:
+            modifier += 0.25
+
+    if ("pharmacist" in q or "dispensed by" in q) and ({"User", "users"} & path_set):
+        modifier += 0.2
+
+    if ("encounter" in q or "admission" in q) and "encounter" in path_set:
+        modifier += 0.25
+
+    if ("hospital" in q or "department" in q) and "hospital" in path_set:
+        modifier += 0.2
+
+    return max(-0.5, min(0.5, modifier))
 
 
 def path_to_description(path: list[str]) -> str:
@@ -89,18 +141,28 @@ def score_all_paths(query: str, paths: list[list[str]], schema: dict) -> list[di
         length_score = score_path_length(path)
         nullable_score = score_nullable_columns(path, schema)
         keyword_boost = score_keyword_boost(query, path)
+        domain_modifier = score_domain_modifier(query, path)
 
-        final_score = (semantic_score * 0.78) + (length_score * 0.12) + (nullable_score * 0.10) + keyword_boost
-        results.append(
-            {
-                "path": path,
-                "description": description,
-                "semantic_score": round(semantic_score, 4),
-                "length_score": round(length_score, 4),
-                "nullable_score": round(nullable_score, 4),
-                "final_score": round(final_score, 4),
-            }
+        final_score = (
+            (semantic_score * 0.76)
+            + (length_score * 0.10)
+            + (nullable_score * 0.10)
+            + keyword_boost
+            + domain_modifier
         )
+        result = {
+            "path": path,
+            "description": description,
+            "semantic_score": round(semantic_score, 4),
+            "length_score": round(length_score, 4),
+            "nullable_score": round(nullable_score, 4),
+            "keyword_boost": round(keyword_boost, 4),
+            "domain_modifier": round(domain_modifier, 4),
+            "final_score": round(final_score, 4),
+        }
+        results.append(result)
 
     results.sort(key=lambda item: item["final_score"], reverse=True)
+    if DEBUG and results:
+        print(f"[SCORER] top_path={results[0]['path']} score={results[0]['final_score']}")
     return results

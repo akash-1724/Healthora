@@ -90,9 +90,13 @@ Rules:
 - Use the exact join conditions provided.
 - Return ONLY SQL, no explanation.
 - Use SELECT only.
+- Prefer hospital-v2 tables in the chosen path when both v2 and legacy table families are present.
 - If user asks about sales or revenue, prioritize dispensing_records + drug_batches + drugs and date filter on dispensing_records.dispensed_at.
 - If user asks about stock/expiry, prioritize drug_batches and filter on expiry_date/is_expired where relevant.
 - For drug-name searches, use case-insensitive matching with ILIKE and prefer `(d.drug_name ILIKE '%name%' OR d.generic_name ILIKE '%name%')` instead of strict equality.
+- drug_id and batch_id are different fields. If user asks for drug id, filter on drug_id not batch_id.
+- If path contains dispense_item without drug/drugs table, bridge via drug_batch (dispense_item.batch_id = drug_batch.batch_id).
+- Respect exact table casing for special names like "User".
 """
 
     client = _get_client()
