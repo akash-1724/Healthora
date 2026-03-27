@@ -110,9 +110,9 @@ def _forecast(values: list[float], horizon: int, slope: float, volatility: float
         rows.append(
             {
                 "day": i,
-                "predicted_usage": round(pred, 2),
-                "confidence_low": round(low, 2),
-                "confidence_high": round(high, 2),
+                "predicted_usage": int(round(pred)),
+                "confidence_low": int(round(low)),
+                "confidence_high": int(round(high)),
             }
         )
     return rows
@@ -275,6 +275,8 @@ def _build_payload(db: Session) -> dict:
 
         fc7 = _forecast(cleaned, 7, slope, volatility)
         fc30 = _forecast(cleaned, 30, slope, volatility)
+        fc60 = _forecast(cleaned, 60, slope, volatility)
+        fc90 = _forecast(cleaned, 90, slope, volatility)
         mae, rmse, mape = _real_error_metrics(cleaned)
 
         avg_daily = float(mean(cleaned[-30:])) if cleaned else 0.0
@@ -286,6 +288,8 @@ def _build_payload(db: Session) -> dict:
 
         current_stock = stock_by_drug.get(drug.drug_id, 0)
         forecast_30_total = float(sum(r["predicted_usage"] for r in fc30))
+        forecast_60_total = float(sum(r["predicted_usage"] for r in fc60))
+        forecast_90_total = float(sum(r["predicted_usage"] for r in fc90))
         last_30_day_usage = float(sum(cleaned[-30:])) if cleaned else 0.0
 
         temp_rows.append(
@@ -299,6 +303,8 @@ def _build_payload(db: Session) -> dict:
                 "model_family": model_family,
                 "forecast7": fc7,
                 "forecast30": fc30,
+                "forecast60": fc60,
+                "forecast90": fc90,
                 "mae": mae,
                 "rmse": rmse,
                 "mape": mape,
@@ -306,6 +312,8 @@ def _build_payload(db: Session) -> dict:
                 "growth_rate": growth_rate,
                 "current_stock": current_stock,
                 "forecast_30_total": forecast_30_total,
+                "forecast_60_total": forecast_60_total,
+                "forecast_90_total": forecast_90_total,
                 "last_30_day_usage": last_30_day_usage,
             }
         )
@@ -328,8 +336,13 @@ def _build_payload(db: Session) -> dict:
         lead_days = 14
         lead_forecast = float(sum((fc30[i]["predicted_usage"] for i in range(min(lead_days, len(fc30))))))
         safety_stock = int(max(drug.low_stock_threshold, ceil(avg_daily * max(5.0, 7.0 + (volatility * 7.0)))))
-        target_stock = int(ceil(row["forecast_30_total"] + safety_stock))
-        reorder_qty = max(0, target_stock - current_stock)
+        target_stock_30 = int(ceil(row["forecast_30_total"] + safety_stock))
+        target_stock_60 = int(ceil(row["forecast_60_total"] + safety_stock))
+        target_stock_90 = int(ceil(row["forecast_90_total"] + safety_stock))
+        reorder_qty_30 = max(0, target_stock_30 - current_stock)
+        reorder_qty_60 = max(0, target_stock_60 - current_stock)
+        reorder_qty_90 = max(0, target_stock_90 - current_stock)
+        reorder_qty = reorder_qty_30
         stock_turnover_ratio = ((avg_daily * 30.0) / max(1.0, float(current_stock))) if current_stock > 0 else 0.0
 
         if current_stock < (lead_forecast + safety_stock):
@@ -340,6 +353,9 @@ def _build_payload(db: Session) -> dict:
                     "current_stock": current_stock,
                     "reorder_point": int(ceil(lead_forecast + safety_stock)),
                     "recommended_reorder_qty": reorder_qty,
+                    "recommended_reorder_qty_30": reorder_qty_30,
+                    "recommended_reorder_qty_60": reorder_qty_60,
+                    "recommended_reorder_qty_90": reorder_qty_90,
                     "suggested_supplier": supplier_hint_by_drug.get(drug.drug_id),
                 }
             )
@@ -381,8 +397,8 @@ def _build_payload(db: Session) -> dict:
                 "drug_id": drug.drug_id,
                 "drug_name": drug.drug_name,
                 "current_stock": current_stock,
-                "last_30_day_usage": round(row["last_30_day_usage"], 2),
-                "average_daily_usage": round(avg_daily, 2),
+                "last_30_day_usage": int(round(row["last_30_day_usage"])),
+                "average_daily_usage": int(round(avg_daily)),
                 "trend_type": row["trend"],
                 "seasonality_strength": round(row["seasonality"], 3),
                 "demand_variance": round(volatility, 3),
@@ -394,19 +410,26 @@ def _build_payload(db: Session) -> dict:
                 "stock_turnover_ratio": round(stock_turnover_ratio, 3),
                 "movement_status": movement,
                 "recommended_reorder_qty": reorder_qty,
+                "recommended_reorder_qty_30": reorder_qty_30,
+                "recommended_reorder_qty_60": reorder_qty_60,
+                "recommended_reorder_qty_90": reorder_qty_90,
                 "safety_stock": safety_stock,
                 "next_7_day_forecast": row["forecast7"],
                 "next_30_day_forecast": row["forecast30"],
-                "next_30_day_forecast_total": round(row["forecast_30_total"], 2),
+                "next_60_day_forecast": row["forecast60"],
+                "next_90_day_forecast": row["forecast90"],
+                "next_30_day_forecast_total": int(round(row["forecast_30_total"])),
+                "next_60_day_forecast_total": int(round(row["forecast_60_total"])),
+                "next_90_day_forecast_total": int(round(row["forecast_90_total"])),
                 "latest_features": {
                     "day_of_week": as_of_date.weekday(),
                     "month": as_of_date.month,
                     "season": _season_label(as_of_date),
                     "festival_indicator": False,
                     "epidemic_indicator": False,
-                    "lag_1": round(row["cleaned"][-1], 2) if row["cleaned"] else 0.0,
-                    "lag_7": round(row["cleaned"][-7], 2) if len(row["cleaned"]) >= 7 else 0.0,
-                    "rolling_mean_7": round(float(mean(row["cleaned"][-7:])), 2) if len(row["cleaned"]) >= 7 else round(avg_daily, 2),
+                    "lag_1": int(round(row["cleaned"][-1])) if row["cleaned"] else 0,
+                    "lag_7": int(round(row["cleaned"][-7])) if len(row["cleaned"]) >= 7 else 0,
+                    "rolling_mean_7": int(round(float(mean(row["cleaned"][-7:])))) if len(row["cleaned"]) >= 7 else int(round(avg_daily)),
                 },
                 "suggested_supplier": supplier_hint_by_drug.get(drug.drug_id),
             }
