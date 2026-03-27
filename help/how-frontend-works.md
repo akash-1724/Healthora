@@ -1,13 +1,17 @@
-# How Frontend Works
+# How Frontend Works (Simple)
 
-1. React starts from `frontend/src/App.jsx`.
-2. Landing page (`/`) presents a full Neo-brutalism design with project details, team stats, and a login section at the bottom.
-3. Login supports Remember Me and stores JWT in localStorage or sessionStorage.
-4. `/dashboard` route is protected by token check.
-5. Dashboard loads role access modules from backend.
-6. Sidebar tabs are shown/hidden based on role.
-7. Main panel renders module views (dashboard, users, patients, drugs, inventory, ai-report, settings).
-8. Inventory uses tabs (Drugs / Batches / Stock View) with permission-gated actions.
-9. Dashboard includes expiry filters, notification actions, and global search.
+Think of frontend as the hospital face.
 
-Styling is handled by `frontend/src/styles.css`.
+1. React starts in `frontend/src/App.jsx`.
+2. User opens login page and signs in.
+3. Frontend saves JWT token (local or session storage).
+4. User enters `/dashboard`.
+5. Frontend asks backend: "What can this role access?"
+6. Sidebar shows only allowed modules.
+7. Clicking a module loads that screen (patients, inventory, AI report, reorder, etc.).
+8. Each button (add/edit/delete) is shown only if permission is allowed.
+
+Important idea:
+
+- Frontend is for display and user actions.
+- Backend is final authority for security and data.

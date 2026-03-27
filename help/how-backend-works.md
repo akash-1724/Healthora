@@ -1,43 +1,33 @@
-# How Backend Works
+# How Backend Works (Simple)
 
-1. FastAPI starts from `backend/main.py`.
-2. Alembic applies migrations (`alembic upgrade head`).
-3. Startup seed inserts roles, users, patients, drugs, and batches.
-   - Core data is sourced from `HIS (1).xlsx` sheets and normalized to current RBAC roles.
-4. Login endpoint validates plain text username/password.
-5. On success, backend returns JWT token.
-6. Protected APIs use Bearer JWT + RBAC role checks.
+Think of backend as the hospital brain.
 
-Main endpoints:
+## Big picture
 
-- `POST /api/login`
-- `GET /api/me`
-- `GET /api/dashboard-access`
-- `GET /api/dashboard-summary`
-- `GET /api/dashboard-expiry`
-- `GET /api/dashboard-notifications`
-- `GET /api/users`
-- `POST /api/users`
-- `PUT /api/users/{user_id}`
-- `PATCH /api/users/{user_id}/deactivate`
-- `PATCH /api/users/{user_id}/reset-password`
-- `DELETE /api/users/{user_id}`
-- `GET /api/departments`
-- `GET /api/inventory`
-- `PUT /api/inventory/{batch_id}`
-- `GET /api/drugs`
-- `POST /api/drugs`
-- `PUT /api/drugs/{drug_id}`
-- `PATCH /api/drugs/{drug_id}/disable`
-- `POST /api/drug-batches`
-- `PATCH /api/drug-batches/{batch_id}/mark-expired`
-- `GET /api/patients`
-- `POST /api/patients`
-- `PUT /api/patients/{patient_id}`
-- `PATCH /api/patients/{patient_id}/archive`
-- `GET /api/ai-report`
-- `POST /api/ai-report/query`
-- `POST /api/ai-report/generate-report`
-- `GET /api/ai-report/{report_id}/preview`
-- `POST /api/ai-report/{report_id}/download`
-- `GET /api/ai-report/rag/stats`
+1. App starts from `backend/main.py`.
+2. Database tables are kept up-to-date by Alembic migrations.
+3. Backend reads real data from PostgreSQL.
+4. Users log in and get a JWT token.
+5. Every protected API checks token + permissions.
+
+## What happens at startup
+
+1. FastAPI starts routers (auth, users, inventory, AI report, reorder, and more).
+2. Optional startup seed runs only if `ENABLE_STARTUP_SEED=true`.
+3. A daily background job marks old drug batches as expired.
+
+## Security in one line
+
+- Passwords are checked with bcrypt.
+- JWT token is used for API auth.
+- RBAC permissions decide who can do what.
+
+## Main API groups
+
+- Auth: login, register sysadmin, current user.
+- Users: create/update/deactivate users (with role rules).
+- Patients/Prescriptions/Dispensing: patient treatment flow.
+- Inventory/Drugs/Batches: stock management.
+- Suppliers/Purchase Orders: medicine procurement flow.
+- AI Report: ask questions in natural language and run SQL.
+- Reorder Recommendation: forecast usage and suggest reorder quantity.
