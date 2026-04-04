@@ -40,7 +40,17 @@ def is_safe_sql(sql: str) -> tuple[bool, str]:
     if statement.get_type() != "SELECT":
         return False, f"Only SELECT allowed, got: {statement.get_type()}"
 
-    dangerous = ["DROP", "DELETE", "UPDATE", "INSERT", "TRUNCATE", "ALTER", "CREATE", "GRANT", "REVOKE"]
+    dangerous = [
+        "DROP",
+        "DELETE",
+        "UPDATE",
+        "INSERT",
+        "TRUNCATE",
+        "ALTER",
+        "CREATE",
+        "GRANT",
+        "REVOKE",
+    ]
     upper = sql.upper()
     for word in dangerous:
         if re.search(rf"\b{word}\b", upper):
@@ -51,19 +61,27 @@ def is_safe_sql(sql: str) -> tuple[bool, str]:
 
 def _ensure_limit(sql: str, max_rows: int) -> str:
     if max_rows <= 0:
-        return re.sub(r"\s+LIMIT\s+\d+\s*;?\s*$", "", sql, flags=re.IGNORECASE).strip()
-    if re.search(r"\blimit\b", sql, flags=re.IGNORECASE):
-        return sql
+        return sql.strip()
+
+    limit_match = re.search(r"\bLIMIT\s+(\d+)\s*;?\s*$", sql, flags=re.IGNORECASE)
+    if limit_match:
+        existing = int(limit_match.group(1))
+        if existing <= max_rows:
+            return sql.strip()
+        return re.sub(
+            r"\bLIMIT\s+\d+\s*;?\s*$", f"LIMIT {max_rows}", sql, flags=re.IGNORECASE
+        ).strip()
     return sql.rstrip(" ;") + f" LIMIT {max_rows}"
 
 
-def fix_sql_with_llm(original_query: str, bad_sql: str, error_message: str, schema: dict, best_path: dict) -> str:
+def fix_sql_with_llm(
+    original_query: str, bad_sql: str, error_message: str, schema: dict, best_path: dict
+) -> str:
     table_context = []
-    for table in best_path["path"]:
-        if table not in schema:
-            continue
-        columns = [col["name"] for col in schema[table]["columns"]]
-        table_context.append(f"{table}: {', '.join(columns)}")
+    for table, table_info in schema.items():
+        columns = [col["name"] for col in table_info["columns"]]
+        marker = " (in selected path)" if table in best_path.get("path", []) else ""
+        table_context.append(f"{table}{marker}: {', '.join(columns)}")
     context_text = "\n".join(table_context)
 
     prompt = f"""You are a PostgreSQL expert. Fix this SQL query.
@@ -100,17 +118,33 @@ def execute_with_retry(
     best_path: dict,
     max_attempts: int = 3,
 ) -> dict:
-    current_sql = _ensure_limit(sql, 0)
+    max_rows = int(os.getenv("AI_QUERY_MAX_ROWS", "500"))
+    current_sql = _ensure_limit(sql, max_rows)
     timeout_ms = int(os.getenv("AI_SQL_TIMEOUT_MS", "8000"))
     last_error = None
+    relation_missing = None
+
+    def _extract_missing_relation(error_text: str | None) -> str | None:
+        if not error_text:
+            return None
+        match = re.search(
+            r'relation\s+"([^"]+)"\s+does\s+not\s+exist',
+            error_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+        return None
 
     for attempt in range(1, max_attempts + 1):
         safe, reason = is_safe_sql(current_sql)
         if not safe:
             if attempt >= max_attempts:
                 return {"success": False, "error": reason, "technical_error": reason}
-            current_sql = fix_sql_with_llm(original_query, current_sql, reason, schema, best_path)
-            current_sql = _ensure_limit(current_sql, 0)
+            current_sql = fix_sql_with_llm(
+                original_query, current_sql, reason, schema, best_path
+            )
+            current_sql = _ensure_limit(current_sql, max_rows)
             continue
 
         try:
@@ -119,7 +153,9 @@ def execute_with_retry(
             columns = list(result.keys())
             rows = result.fetchall()
 
-            save_successful_query(original_query, best_path, current_sql, len(rows), schema)
+            save_successful_query(
+                original_query, best_path, current_sql, len(rows), schema
+            )
             return {
                 "success": True,
                 "columns": columns,
@@ -129,13 +165,18 @@ def execute_with_retry(
             }
         except Exception as exc:
             last_error = str(exc)
+            relation_missing = _extract_missing_relation(last_error)
             if attempt >= max_attempts:
                 break
-            current_sql = fix_sql_with_llm(original_query, current_sql, last_error, schema, best_path)
-            current_sql = _ensure_limit(current_sql, 0)
+            current_sql = fix_sql_with_llm(
+                original_query, current_sql, last_error, schema, best_path
+            )
+            current_sql = _ensure_limit(current_sql, max_rows)
 
     return {
         "success": False,
         "error": "Could not process your query after multiple attempts.",
         "technical_error": last_error,
+        "error_type": "relation_missing" if relation_missing else "execution_failed",
+        "missing_relation": relation_missing,
     }

@@ -1,4 +1,5 @@
 import networkx as nx
+import os
 
 
 def build_graph(schema: dict) -> nx.DiGraph:
@@ -19,8 +20,15 @@ def build_graph(schema: dict) -> nx.DiGraph:
     return graph
 
 
-def get_join_paths(graph: nx.DiGraph, start_table: str, end_table: str) -> list[list[str]]:
+def get_join_paths(
+    graph: nx.DiGraph, start_table: str, end_table: str
+) -> list[list[str]]:
+    cutoff = int(os.getenv("AI_JOIN_PATH_CUTOFF", "6"))
     try:
-        return list(nx.all_simple_paths(graph.to_undirected(), start_table, end_table, cutoff=4))
+        return list(
+            nx.all_simple_paths(
+                graph.to_undirected(), start_table, end_table, cutoff=cutoff
+            )
+        )
     except (nx.NetworkXNoPath, nx.NodeNotFound):
         return []

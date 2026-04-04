@@ -5,6 +5,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 _MODEL = None
 DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
+SEMANTIC_WEIGHT = float(os.getenv("AI_PATH_SEMANTIC_WEIGHT", "0.76"))
+LENGTH_WEIGHT = float(os.getenv("AI_PATH_LENGTH_WEIGHT", "0.10"))
+NULLABLE_WEIGHT = float(os.getenv("AI_PATH_NULLABLE_WEIGHT", "0.10"))
 
 
 def _model() -> SentenceTransformer:
@@ -57,8 +60,18 @@ TABLE_DESCRIPTIONS = {
 def score_keyword_boost(query: str, path: list[str]) -> float:
     query_words = set(query.lower().split())
     keyword_map = {
-        "prescription": {"prescription", "prescription_detail", "prescriptions", "prescription_items"},
-        "prescribed": {"prescription", "prescription_detail", "prescriptions", "prescription_items"},
+        "prescription": {
+            "prescription",
+            "prescription_detail",
+            "prescriptions",
+            "prescription_items",
+        },
+        "prescribed": {
+            "prescription",
+            "prescription_detail",
+            "prescriptions",
+            "prescription_items",
+        },
         "dispense": {"dispense", "dispense_item", "dispensing_records"},
         "dispensed": {"dispense", "dispense_item", "dispensing_records"},
         "sale": {"dispense", "dispense_item", "dispensing_records", "drug", "drugs"},
@@ -66,7 +79,12 @@ def score_keyword_boost(query: str, path: list[str]) -> float:
         "stock": {"store_inventory", "stock_transaction", "drug_batch", "drug_batches"},
         "expiry": {"drug_batch", "drug_batches"},
         "supplier": {"supplier", "suppliers", "purchase_order", "purchase_orders"},
-        "order": {"purchase_order", "purchase_order_item", "purchase_orders", "purchase_order_items"},
+        "order": {
+            "purchase_order",
+            "purchase_order_item",
+            "purchase_orders",
+            "purchase_order_items",
+        },
         "doctor": {"doctor", "prescription", "prescriptions", "encounter"},
         "department": {"department", "encounter"},
         "audit": {"audit_logs"},
@@ -87,24 +105,19 @@ def score_keyword_boost(query: str, path: list[str]) -> float:
 def score_domain_modifier(query: str, path: list[str]) -> float:
     q = query.lower()
     path_set = set(path)
+    must_cover = {
+        "patient": {"patient", "patients"},
+        "doctor": {"doctor", "prescription", "prescriptions"},
+        "supplier": {"supplier", "suppliers", "purchase_order", "purchase_orders"},
+        "inventory": {"drug_batch", "drug_batches", "store_inventory"},
+        "dispense": {"dispense", "dispense_item", "dispensing_records"},
+    }
+
     modifier = 0.0
-
-    if "department" in q and ({"dispense", "dispense_item", "dispensing_records", "prescription", "prescriptions"} & path_set):
-        if "User" in path_set or "users" in path_set:
-            modifier -= 0.25
-        if "doctor" in path_set or "encounter" in path_set:
-            modifier += 0.25
-
-    if ("pharmacist" in q or "dispensed by" in q) and ({"User", "users"} & path_set):
-        modifier += 0.2
-
-    if ("encounter" in q or "admission" in q) and "encounter" in path_set:
-        modifier += 0.25
-
-    if ("hospital" in q or "department" in q) and "hospital" in path_set:
-        modifier += 0.2
-
-    return max(-0.5, min(0.5, modifier))
+    for keyword, expected_tables in must_cover.items():
+        if keyword in q:
+            modifier += 0.08 if (expected_tables & path_set) else -0.08
+    return max(-0.3, min(0.3, modifier))
 
 
 def path_to_description(path: list[str]) -> str:
@@ -144,9 +157,9 @@ def score_all_paths(query: str, paths: list[list[str]], schema: dict) -> list[di
         domain_modifier = score_domain_modifier(query, path)
 
         final_score = (
-            (semantic_score * 0.76)
-            + (length_score * 0.10)
-            + (nullable_score * 0.10)
+            (semantic_score * SEMANTIC_WEIGHT)
+            + (length_score * LENGTH_WEIGHT)
+            + (nullable_score * NULLABLE_WEIGHT)
             + keyword_boost
             + domain_modifier
         )
@@ -164,5 +177,7 @@ def score_all_paths(query: str, paths: list[list[str]], schema: dict) -> list[di
 
     results.sort(key=lambda item: item["final_score"], reverse=True)
     if DEBUG and results:
-        print(f"[SCORER] top_path={results[0]['path']} score={results[0]['final_score']}")
+        print(
+            f"[SCORER] top_path={results[0]['path']} score={results[0]['final_score']}"
+        )
     return results

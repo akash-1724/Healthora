@@ -14,7 +14,17 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
-from ai_nl2sql import build_graph, clear_store, execute_with_retry, generate_sql, get_rag_stats, introspect_database, load_store, run_pipeline
+from ai_nl2sql import (
+    build_graph,
+    clear_store,
+    execute_with_retry,
+    generate_sql,
+    get_rag_stats,
+    invalidate_query,
+    introspect_database,
+    load_store,
+    run_pipeline,
+)
 from ai_nl2sql.schema_linker import get_relevant_tables
 from audit import log_action
 from database import get_db
@@ -38,6 +48,10 @@ class DownloadRequest(BaseModel):
     format: str
 
 
+class RagInvalidateRequest(BaseModel):
+    question: str
+
+
 class QueryResponse(BaseModel):
     question: str
     sql: str
@@ -46,6 +60,7 @@ class QueryResponse(BaseModel):
     count: int
     success: bool
     cached: bool = False
+    warning: str | None = None
 
 
 class QueryDebugResponse(BaseModel):
@@ -68,9 +83,81 @@ def _ensure_loaded() -> tuple[dict, object]:
 
 def _is_cached(question: str, sql: str) -> bool:
     for entry in load_store():
-        if entry.get("query", "").lower() == question.lower() and entry.get("sql") == sql:
+        if (
+            entry.get("query", "").lower() == question.lower()
+            and entry.get("sql") == sql
+        ):
             return True
     return False
+
+
+def _build_zero_rows_warning(question: str, count: int) -> str | None:
+    if count != 0:
+        return None
+    q = question.lower()
+    if any(token in q for token in ("all", "list", "show", "top", "total", "count")):
+        return (
+            "Query ran but returned 0 rows. Filters or table path might be too strict."
+        )
+    return None
+
+
+def _run_query_with_fallback(
+    question: str, db: Session, schema: dict, graph
+) -> tuple[dict, str, bool, dict]:
+    excluded_tables: set[str] = set()
+    last_error = None
+    tried_paths: set[tuple[str, ...]] = set()
+
+    for _ in range(3):
+        raw_candidates = run_pipeline(
+            question,
+            schema,
+            graph,
+            exclude_tables=excluded_tables,
+            return_candidates=True,
+        )
+        if isinstance(raw_candidates, list):
+            candidate_paths = [p for p in raw_candidates if isinstance(p, dict)]
+        elif isinstance(raw_candidates, dict):
+            candidate_paths = [raw_candidates]
+        else:
+            candidate_paths = []
+
+        candidate_paths = [
+            p for p in candidate_paths if tuple(p.get("path", [])) not in tried_paths
+        ]
+        if not candidate_paths:
+            break
+
+        for idx, best_path in enumerate(candidate_paths[:3]):
+            tried_paths.add(tuple(best_path.get("path", [])))
+            alternatives = [
+                p for p in candidate_paths[idx + 1 : idx + 3] if isinstance(p, dict)
+            ]
+            sql = generate_sql(
+                question, best_path, schema, graph, db, alternative_paths=alternatives
+            )
+            cached = _is_cached(question, sql)
+            result = execute_with_retry(db, question, sql, schema, best_path)
+            if result.get("success"):
+                return result, sql, cached, best_path
+
+            last_error = result.get("technical_error") or result.get("error")
+            if result.get("error_type") == "relation_missing" and result.get(
+                "missing_relation"
+            ):
+                excluded_tables.add(result["missing_relation"])
+
+    if not tried_paths:
+        raise HTTPException(
+            status_code=422, detail="Could not map this question to database tables"
+        )
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"AI query failed: {last_error or 'Unknown SQL execution error'}",
+    )
 
 
 def _json_safe(value):
@@ -165,7 +252,12 @@ def _build_charts(columns: list[str], rows: list[dict]) -> list[dict]:
                     "type": "line",
                     "title": f"Monthly trend of {metric}",
                     "labels": labels,
-                    "series": [{"name": metric, "values": [round(monthly[label], 2) for label in labels]}],
+                    "series": [
+                        {
+                            "name": metric,
+                            "values": [round(monthly[label], 2) for label in labels],
+                        }
+                    ],
                 }
             )
 
@@ -187,13 +279,20 @@ def _build_charts(columns: list[str], rows: list[dict]) -> list[dict]:
                     continue
                 grouped[key] = grouped.get(key, 0.0) + numeric_value
             if grouped:
-                top = sorted(grouped.items(), key=lambda pair: pair[1], reverse=True)[:8]
+                top = sorted(grouped.items(), key=lambda pair: pair[1], reverse=True)[
+                    :8
+                ]
                 charts.append(
                     {
                         "type": "bar",
                         "title": f"Top {category} by {metric}",
                         "labels": [name for name, _ in top],
-                        "series": [{"name": metric, "values": [round(val, 2) for _, val in top]}],
+                        "series": [
+                            {
+                                "name": metric,
+                                "values": [round(val, 2) for _, val in top],
+                            }
+                        ],
                     }
                 )
 
@@ -204,6 +303,9 @@ def _build_kpis(columns: list[str], rows: list[dict]) -> list[dict]:
     kpis = [{"label": "Rows", "value": len(rows)}]
     metric = _pick_metric_column(columns, rows)
     if metric:
+        metric_name = metric.lower()
+        if metric_name.endswith("_id") or metric_name in {"id", "code", "batch_no"}:
+            return kpis
         values = []
         for row in rows:
             value = row.get(metric)
@@ -222,19 +324,46 @@ def _build_kpis(columns: list[str], rows: list[dict]) -> list[dict]:
     return kpis
 
 
-def _build_summary(question: str, rows: list[dict], kpis: list[dict], charts: list[dict]) -> str:
+def _build_summary(
+    question: str, rows: list[dict], kpis: list[dict], charts: list[dict]
+) -> str:
     lines = []
-    lines.append(f"Report generated for query: '{question}'.")
-    lines.append(f"The dataset contains {len(rows)} rows after applying current filters.")
-    if rows and all((r.get("units_sold") == 0 or r.get("units_sold") is None) for r in rows if isinstance(r, dict)):
-        lines.append("No sales were recorded for the selected filter window, so totals are zero.")
+    lines.append(f"Question: {question}.")
+    lines.append(f"Returned {len(rows)} rows.")
+    if rows and all(
+        (r.get("units_sold") == 0 or r.get("units_sold") is None)
+        for r in rows
+        if isinstance(r, dict)
+    ):
+        lines.append(
+            "No sales were recorded for the selected filter window, so totals are zero."
+        )
 
-    total_kpi = next((k for k in kpis if str(k["label"]).lower().startswith("total ")), None)
+    total_kpi = next(
+        (k for k in kpis if str(k["label"]).lower().startswith("total ")), None
+    )
     if total_kpi:
-        lines.append(f"The aggregate {total_kpi['label'].split(' ', 1)[1]} is {total_kpi['value']}.")
+        lines.append(
+            f"The aggregate {total_kpi['label'].split(' ', 1)[1]} is {total_kpi['value']}."
+        )
+
+    if rows:
+        top_row = rows[0]
+        if isinstance(top_row, dict):
+            preview = []
+            for key, value in top_row.items():
+                if value is None:
+                    continue
+                preview.append(f"{key}={value}")
+                if len(preview) >= 3:
+                    break
+            if preview:
+                lines.append("Top row sample: " + ", ".join(preview) + ".")
 
     if charts:
-        lines.append(f"Preview includes {len(charts)} chart(s) for trend and distribution analysis.")
+        lines.append(
+            f"Preview includes {len(charts)} chart(s) for trend and distribution analysis."
+        )
 
     return " ".join(lines)
 
@@ -266,8 +395,12 @@ def _get_report_payload(report_id: str) -> dict:
     return payload
 
 
-def _build_report_payload(question: str, sql: str, columns: list[str], rows: list[tuple], cached: bool) -> dict:
-    safe_rows = [{col: _json_safe(row[idx]) for idx, col in enumerate(columns)} for row in rows]
+def _build_report_payload(
+    question: str, sql: str, columns: list[str], rows: list[tuple], cached: bool
+) -> dict:
+    safe_rows = [
+        {col: _json_safe(row[idx]) for idx, col in enumerate(columns)} for row in rows
+    ]
     kpis = _build_kpis(columns, safe_rows)
     charts = _build_charts(columns, safe_rows)
     summary = _build_summary(question, safe_rows, kpis, charts)
@@ -345,31 +478,34 @@ def _export_pdf(payload: dict) -> Path:
 @router.get("", dependencies=[Depends(require_permission("view_ai_report"))])
 def ai_report_status():
     schema, _ = _ensure_loaded()
-    return {"message": "AI report ready", "tables": len(schema), "formats": ["pdf", "csv"]}
+    return {
+        "message": "AI report ready",
+        "tables": len(schema),
+        "formats": ["pdf", "csv"],
+    }
 
 
-@router.post("/query", response_model=QueryResponse, dependencies=[Depends(require_permission("view_ai_report"))])
-def ai_report_query(payload: QueryRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post(
+    "/query",
+    response_model=QueryResponse,
+    dependencies=[Depends(require_permission("view_ai_report"))],
+)
+def ai_report_query(
+    payload: QueryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    schema, graph = _ensure_loaded()
-    best_path = run_pipeline(question, schema, graph)
-    if not best_path:
-        raise HTTPException(status_code=422, detail="Could not map this question to database tables")
-
     try:
-        sql = generate_sql(question, best_path, schema, graph)
-        cached = _is_cached(question, sql)
-        result = execute_with_retry(db, question, sql, schema, best_path)
+        schema, graph = _ensure_loaded()
+        result, sql, cached, _best_path = _run_query_with_fallback(
+            question, db, schema, graph
+        )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"AI query failed: {exc}") from exc
-
-    if not result["success"]:
-        raise HTTPException(status_code=500, detail=result["error"])
 
     log_action(
         db,
@@ -388,23 +524,44 @@ def ai_report_query(payload: QueryRequest, db: Session = Depends(get_db), curren
         count=result["count"],
         success=True,
         cached=cached,
+        warning=_build_zero_rows_warning(question, result["count"]),
     )
 
 
-@router.post("/query-debug", response_model=QueryDebugResponse, dependencies=[Depends(require_permission("view_ai_report"))])
-def ai_report_query_debug(payload: QueryRequest):
+@router.post(
+    "/query-debug",
+    response_model=QueryDebugResponse,
+    dependencies=[Depends(require_permission("view_ai_report"))],
+)
+def ai_report_query_debug(payload: QueryRequest, db: Session = Depends(get_db)):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
     schema, graph = _ensure_loaded()
-    relevant_tables = get_relevant_tables(question, schema, top_k=6)
-    best_path = run_pipeline(question, schema, graph)
+    relevant_tables = get_relevant_tables(question, schema, top_k=10)
+    raw_candidates = run_pipeline(question, schema, graph, return_candidates=True)
+    if isinstance(raw_candidates, list):
+        candidates = [p for p in raw_candidates if isinstance(p, dict)]
+    elif isinstance(raw_candidates, dict):
+        candidates = [raw_candidates]
+    else:
+        candidates = []
+    best_path = candidates[0] if candidates else None
     if not best_path:
-        raise HTTPException(status_code=422, detail="Could not map this question to database tables")
+        raise HTTPException(
+            status_code=422, detail="Could not map this question to database tables"
+        )
 
     try:
-        sql = generate_sql(question, best_path, schema, graph)
+        sql = generate_sql(
+            question,
+            best_path,
+            schema,
+            graph,
+            db,
+            alternative_paths=[p for p in candidates[1:3] if isinstance(p, dict)],
+        )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -417,28 +574,29 @@ def ai_report_query_debug(payload: QueryRequest):
     )
 
 
-@router.post("/generate-report", dependencies=[Depends(require_permission("view_ai_report"))])
-def generate_report(payload: QueryRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post(
+    "/generate-report", dependencies=[Depends(require_permission("view_ai_report"))]
+)
+def generate_report(
+    payload: QueryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    schema, graph = _ensure_loaded()
-    best_path = run_pipeline(question, schema, graph)
-    if not best_path:
-        raise HTTPException(status_code=422, detail="Could not map this question to database tables")
-
     try:
-        sql = generate_sql(question, best_path, schema, graph)
-        cached = _is_cached(question, sql)
-        result = execute_with_retry(db, question, sql, schema, best_path)
+        schema, graph = _ensure_loaded()
+        result, sql, cached, _best_path = _run_query_with_fallback(
+            question, db, schema, graph
+        )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"AI report generation failed: {exc}") from exc
-
-    if not result["success"]:
-        raise HTTPException(status_code=500, detail=result["error"])
+        raise HTTPException(
+            status_code=500, detail=f"AI report generation failed: {exc}"
+        ) from exc
 
     report_payload = _build_report_payload(
         question=question,
@@ -454,19 +612,33 @@ def generate_report(payload: QueryRequest, db: Session = Depends(get_db), curren
         "ai_generate_report",
         actor_user_id=current_user.user_id,
         target_table="ai_report",
-        detail={"question": question, "report_id": report_payload["report_id"], "rows": report_payload["count"]},
+        detail={
+            "question": question,
+            "report_id": report_payload["report_id"],
+            "rows": report_payload["count"],
+        },
     )
     db.commit()
     return report_payload
 
 
-@router.get("/{report_id}/preview", dependencies=[Depends(require_permission("view_ai_report"))])
+@router.get(
+    "/{report_id}/preview", dependencies=[Depends(require_permission("view_ai_report"))]
+)
 def preview_report(report_id: str):
     return _get_report_payload(report_id)
 
 
-@router.post("/{report_id}/download", dependencies=[Depends(require_permission("view_ai_report"))])
-def download_report(report_id: str, payload: DownloadRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post(
+    "/{report_id}/download",
+    dependencies=[Depends(require_permission("view_ai_report"))],
+)
+def download_report(
+    report_id: str,
+    payload: DownloadRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     report = _get_report_payload(report_id)
     fmt = payload.format.lower().strip()
     if fmt not in {"pdf", "csv"}:
@@ -487,12 +659,22 @@ def download_report(report_id: str, payload: DownloadRequest, db: Session = Depe
         detail={"report_id": report_id, "format": fmt},
     )
     db.commit()
-    return FileResponse(path=str(file_path), filename=file_path.name, media_type=media_type)
+    return FileResponse(
+        path=str(file_path), filename=file_path.name, media_type=media_type
+    )
 
 
 @router.get("/rag/stats", dependencies=[Depends(require_permission("view_ai_report"))])
 def ai_rag_stats():
     return get_rag_stats()
+
+
+@router.post(
+    "/rag/invalidate", dependencies=[Depends(require_permission("view_ai_report"))]
+)
+def ai_rag_invalidate(payload: RagInvalidateRequest):
+    removed = invalidate_query(payload.question)
+    return {"removed": removed}
 
 
 @router.delete("/rag/clear", dependencies=[Depends(require_permission("manage_users"))])

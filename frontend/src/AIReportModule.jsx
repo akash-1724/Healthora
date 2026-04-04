@@ -16,23 +16,55 @@ function isNumeric(value) {
   return value !== null && value !== "" && !Number.isNaN(Number(value));
 }
 
+function scoreName(name, tokens) {
+  const lower = String(name || "").toLowerCase();
+  return tokens.some((t) => lower.includes(t));
+}
+
+function buildChartData(columns, rows) {
+  if (!rows.length || !columns.length) return null;
+
+  const numericCandidates = columns
+    .map((col, idx) => ({ col, idx }))
+    .filter(({ col, idx }) => rows.some((row) => isNumeric(row[idx])) && !scoreName(col, ["_id", " id", "code"]));
+  if (!numericCandidates.length) return null;
+
+  const valueCandidate = numericCandidates.find(({ col }) => scoreName(col, ["total", "count", "sum", "quantity", "amount", "revenue", "sales"])) || numericCandidates[0];
+
+  const categoryCandidates = columns
+    .map((col, idx) => ({ col, idx }))
+    .filter(({ idx }) => idx !== valueCandidate.idx)
+    .filter(({ col, idx }) => rows.some((row) => typeof row[idx] === "string" && String(row[idx]).trim() !== ""));
+  if (!categoryCandidates.length) return null;
+
+  const categoryCandidate = categoryCandidates.find(({ col }) => scoreName(col, ["name", "drug", "patient", "supplier", "month", "date", "status"])) || categoryCandidates[0];
+
+  const grouped = {};
+  rows.forEach((row) => {
+    const keyRaw = row[categoryCandidate.idx];
+    const key = String(keyRaw ?? "Unknown");
+    const value = Number(row[valueCandidate.idx] || 0);
+    if (Number.isNaN(value)) return;
+    grouped[key] = (grouped[key] || 0) + value;
+  });
+
+  const sorted = Object.entries(grouped)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, rows.length > 50 ? 20 : 15)
+    .map(([name, value]) => ({ name: name.length > 15 ? `${name.slice(0, 15)}...` : name, value }));
+
+  return {
+    labelColumn: categoryCandidate.col,
+    valueColumn: valueCandidate.col,
+    chartData: sorted,
+  };
+}
+
 function ChartsPanel({ columns, rows }) {
   if (!rows || rows.length === 0 || !columns || columns.length === 0) return null;
-
-  const sample = rows[0] || [];
-  const labelIndex = columns.findIndex((_, idx) => !isNumeric(sample[idx]));
-  const valueIndex = columns.findIndex((_, idx) => isNumeric(sample[idx]));
-  if (labelIndex === -1 || valueIndex === -1) return null;
-
-  const labelColumn = columns[labelIndex];
-  const valueColumn = columns[valueIndex];
-  const chartData = rows.slice(0, 15).map((row) => {
-    const label = String(row[labelIndex] ?? "");
-    return {
-      name: label.length > 15 ? `${label.slice(0, 15)}...` : label,
-      value: Number(row[valueIndex]),
-    };
-  });
+  const parsed = buildChartData(columns, rows);
+  if (!parsed) return null;
+  const { labelColumn, valueColumn, chartData } = parsed;
 
   return (
     <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
@@ -76,6 +108,7 @@ export default function AIReportModule() {
   const [downloading, setDownloading] = useState(false);
   const [format, setFormat] = useState("pdf");
   const [showSql, setShowSql] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState("");
 
   const previewRows = useMemo(() => (result?.rows || []), [result]);
 
@@ -87,6 +120,7 @@ export default function AIReportModule() {
     setSearched(true);
     setReport(null);
     setShowSql(false);
+    setFeedbackMsg("");
 
     try {
       const data = await api.aiReportQuery(question.trim());
@@ -133,6 +167,17 @@ export default function AIReportModule() {
     }
   }
 
+  async function markResultWrong() {
+    if (!question.trim()) return;
+    setFeedbackMsg("");
+    try {
+      const res = await api.aiInvalidateRagQuery(question.trim());
+      setFeedbackMsg(res?.removed ? "Removed from AI cache. Next run will regenerate." : "No cache entry found for this question.");
+    } catch (err) {
+      setFeedbackMsg(err.message || "Failed to update cache feedback.");
+    }
+  }
+
   return (
     <div className="section" style={{ margin: 24 }}>
       <div className="section-header"><h3>AI Query Console</h3></div>
@@ -154,16 +199,19 @@ export default function AIReportModule() {
           {result && <span className="badge medium">{result.count} rows</span>}
           {result && <button className="secondary-btn" onClick={() => setShowSql((prev) => !prev)}>{showSql ? "Hide SQL Query" : "Show SQL Query"}</button>}
           {result && <button className="secondary-btn" onClick={generateDownloadableReport} disabled={loading}>{loading ? "Preparing..." : "Prepare Download"}</button>}
+          {result && <button className="secondary-btn" onClick={markResultWrong}>Wrong Result</button>}
         </div>
       </div>
 
       {error && <div className="error-msg" style={{ marginTop: 12 }}>⚠️ {error}</div>}
+      {feedbackMsg && <div className="error-msg" style={{ marginTop: 12 }}>{feedbackMsg}</div>}
 
       {loading && <p style={{ marginTop: 12, color: "#64748b" }}>Searching database...</p>}
 
       {result && (
         <>
           <ChartsPanel columns={result.columns} rows={result.rows} />
+          {result.warning && <div style={{ marginTop: 10, color: "#9a3412", fontWeight: 600 }}>{result.warning}</div>}
 
           {showSql && (
             <div style={{ marginTop: 12, background: "#111827", color: "#e5e7eb", padding: 12, borderRadius: 8, fontFamily: "monospace", fontSize: 12 }}>

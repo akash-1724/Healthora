@@ -137,4 +137,5 @@ export const api = {
   aiReportPreview: (reportId) => request(`/api/ai-report/${reportId}/preview`),
   aiDownloadReport: (reportId, format) => requestBlob(`/api/ai-report/${reportId}/download`, { method: "POST", body: JSON.stringify({ format }) }),
   aiReportRagStats: () => request("/api/ai-report/rag/stats"),
+  aiInvalidateRagQuery: (question) => request("/api/ai-report/rag/invalidate", { method: "POST", body: JSON.stringify({ question }) }),
 };

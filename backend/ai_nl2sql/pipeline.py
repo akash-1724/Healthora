@@ -7,6 +7,8 @@ from .rag import find_similar_query, load_store
 from .schema_linker import get_relevant_tables
 
 DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
+TOP_K_TABLES = int(os.getenv("AI_LINKER_TOP_K", "10"))
+MAX_PATH_CANDIDATES = int(os.getenv("AI_MAX_PATH_CANDIDATES", "5"))
 
 
 def score_relevant_table_coverage(path: list[str], relevant_tables: list[str]) -> float:
@@ -21,24 +23,56 @@ def score_relevant_table_coverage(path: list[str], relevant_tables: list[str]) -
     return max(0.0, coverage - penalty)
 
 
-def run_pipeline(query: str, schema: dict, graph) -> dict | None:
+def _expand_tables_one_hop(tables: list[str], graph) -> list[str]:
+    expanded = list(tables)
+    seen = set(expanded)
+    undirected = graph.to_undirected()
+    for table in tables:
+        if table not in undirected:
+            continue
+        for neighbor in undirected.neighbors(table):
+            if neighbor in seen:
+                continue
+            seen.add(neighbor)
+            expanded.append(neighbor)
+    return expanded
+
+
+def run_pipeline(
+    query: str,
+    schema: dict,
+    graph,
+    exclude_tables: set[str] | None = None,
+    return_candidates: bool = False,
+):
+    excluded = exclude_tables or set()
     if DEBUG:
         print("=" * 70)
         print(f"[PIPELINE] query={query}")
 
     store = load_store()
     rag_match, rag_score = find_similar_query(query, store, schema)
-    if rag_match:
+    if rag_match and not excluded.intersection(
+        set(rag_match.get("best_path", {}).get("path", []))
+    ):
         if DEBUG:
-            print(f"[PIPELINE] rag_hit score={rag_score:.4f} path={rag_match.get('best_path', {}).get('path', [])}")
+            print(
+                f"[PIPELINE] rag_hit score={rag_score:.4f} path={rag_match.get('best_path', {}).get('path', [])}"
+            )
+        if return_candidates:
+            return [rag_match.get("best_path")]
         return rag_match.get("best_path")
 
-    relevant_tables = get_relevant_tables(query, schema, top_k=6)
+    relevant_tables = get_relevant_tables(query, schema, top_k=TOP_K_TABLES)
+    relevant_tables = [table for table in relevant_tables if table not in excluded]
+    expanded_tables = _expand_tables_one_hop(relevant_tables, graph)
+    expanded_tables = [table for table in expanded_tables if table not in excluded]
     if DEBUG:
         print(f"[PIPELINE] relevant_tables={relevant_tables}")
+        print(f"[PIPELINE] expanded_tables={expanded_tables}")
 
     all_paths = []
-    for start, end in combinations(relevant_tables, 2):
+    for start, end in combinations(expanded_tables, 2):
         all_paths.extend(get_join_paths(graph, start, end))
 
     unique_paths = []
@@ -53,7 +87,15 @@ def run_pipeline(query: str, schema: dict, graph) -> dict | None:
     if not unique_paths:
         if DEBUG:
             print("[PIPELINE] no join path found")
-        return None
+        return [] if return_candidates else None
+
+    if relevant_tables:
+        relevant_set = set(relevant_tables)
+        unique_paths = [
+            path for path in unique_paths if relevant_set.intersection(path)
+        ]
+        if not unique_paths:
+            return [] if return_candidates else None
 
     scored = score_all_paths(query, unique_paths, schema)
 
@@ -63,9 +105,16 @@ def run_pipeline(query: str, schema: dict, graph) -> dict | None:
         result["final_score"] = round(result["final_score"] + (coverage * 0.8), 4)
 
     scored.sort(key=lambda item: item["final_score"], reverse=True)
+    top_scored = scored[:MAX_PATH_CANDIDATES]
     if DEBUG and scored:
         print(f"[PIPELINE] total_paths={len(unique_paths)}")
-        print(f"[PIPELINE] best_path={scored[0]['path']} score={scored[0]['final_score']}")
-        print(f"[PIPELINE] top3={[{'path': s['path'], 'score': s['final_score']} for s in scored[:3]]}")
+        print(
+            f"[PIPELINE] best_path={top_scored[0]['path']} score={top_scored[0]['final_score']}"
+        )
+        print(
+            f"[PIPELINE] top3={[{'path': s['path'], 'score': s['final_score']} for s in top_scored[:3]]}"
+        )
 
-    return scored[0]
+    if return_candidates:
+        return top_scored
+    return top_scored[0] if top_scored else None
