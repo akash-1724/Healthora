@@ -1,6 +1,0 @@
-drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email,supplier_address
-Dolo 650,Paracetamol,Tablet,650mg,OTC,100,DL650-CHK-9001,2027-12-31,1.80,2.50,1200,Global Pharma Distributors,Anoop Mathew,+91-98112-34567,sales@globalpharma.in,"Kochi, Kerala"
-Atorva 20,Atorvastatin,Tablet,20mg,Schedule H,80,AT20-CHK-9002,2027-10-15,6.25,9.40,450,Medline Lifesciences,Reshma Nair,+91-98220-11446,contact@medline.in,"Thrissur, Kerala"
-Amoxil 500,Amoxicillin,Capsule,500mg,Schedule H,120,AMX500-CHK-9003,2027-11-30,3.20,4.90,760,CarePlus Wholesale,Javed Rahman,+91-98730-22011,hello@carepluswholesale.in,"Kozhikode, Kerala"
-Pantocid 40,Pantoprazole,Tablet,40mg,Schedule H,90,PAN40-CHK-9004,2027-09-30,2.40,3.75,890,Aster Drug Agencies,Simi Joseph,+91-99614-77880,orders@asterdrug.in,"Ernakulam, Kerala"
-Augmentin 625,Amoxicillin + Clavulanate,Tablet,625mg,Schedule H,100,AUG625-CHK-9005,2027-08-31,9.50,13.90,410,Unity Pharma Network,Anita Roy,+91-93882-11773,connect@unitypharma.in,"Thiruvananthapuram, Kerala"

@@ -1,4 +1,0 @@
-drug_name,generic_name,formulation,strength,schedule_type,low_stock_threshold,batch_no,expiry_date,purchase_price,selling_price,quantity_available,supplier_name,supplier_contact,supplier_phone,supplier_email
-Paracip 500,Paracetamol,Tablet,500mg,OTC,120,PAR500-CHK-001,2027-11-30,1.55,2.20,650,Global Pharma Distributors,Anoop Mathew,+91-98112-34567,sales@globalpharma.in
-Omecid 20,Omeprazole,Capsule,20mg,Schedule H,90,OME20-CHK-001,2028-01-15,2.10,3.10,480,Medline Lifesciences,Reshma Nair,+91-98220-11446,contact@medline.in
-Cetri 10,Cetirizine,Tablet,10mg,OTC,75,CET10-CHK-001,2027-09-20,0.95,1.50,900,CarePlus Wholesale,Javed Rahman,+91-98730-22011,hello@carepluswholesale.in
