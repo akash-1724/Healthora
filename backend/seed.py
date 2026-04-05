@@ -162,14 +162,24 @@ def load_his_data() -> dict[str, list[list[str]]]:
         if "xl/sharedStrings.xml" in archive.namelist():
             shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
             for item in shared_root.findall("m:si", NS):
-                shared_strings.append("".join((node.text or "") for node in item.findall(".//m:t", NS)))
+                shared_strings.append(
+                    "".join((node.text or "") for node in item.findall(".//m:t", NS))
+                )
 
         workbook = ET.fromstring(archive.read("xl/workbook.xml"))
         rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
         rel_map = {node.attrib["Id"]: node.attrib["Target"] for node in rels}
 
         output: dict[str, list[list[str]]] = {}
-        wanted = {"Department", "Role", "User ", "Paitent", "Drug", "Drug_Batch", "Supplier"}
+        wanted = {
+            "Department",
+            "Role",
+            "User ",
+            "Paitent",
+            "Drug",
+            "Drug_Batch",
+            "Supplier",
+        }
         sheets_node = workbook.find("m:sheets", NS)
         if sheets_node is None:
             return {}
@@ -177,7 +187,9 @@ def load_his_data() -> dict[str, list[list[str]]]:
             name = sheet.attrib["name"]
             if name not in wanted:
                 continue
-            rid = sheet.attrib["{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"]
+            rid = sheet.attrib[
+                "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+            ]
             target = rel_map[rid]
             path = "xl/" + target if not target.startswith("xl/") else target
             sheet_root = ET.fromstring(archive.read(path))
@@ -261,7 +273,9 @@ def seed_users(db: Session, his_data: dict[str, list[list[str]]]):
                 5: "staff_pharmacist",
                 6: "inventory_clerk",
             }.get(user_role_id, "staff_pharmacist")
-            dept_name = department_map.get(int(float(row[4])) if row[4] else 103, "Pharmacy")
+            dept_name = department_map.get(
+                int(float(row[4])) if row[4] else 103, "Pharmacy"
+            )
 
             existing = db.query(User).filter(User.username == username).first()
             if not existing:
@@ -339,7 +353,12 @@ def seed_users(db: Session, his_data: dict[str, list[list[str]]]):
 
 def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
     creator_usernames = ["cmo1", "sysadmin", "pm1", "senior1", "staff1", "clerk1"]
-    creators = db.query(User).filter(User.username.in_(creator_usernames)).order_by(User.user_id.asc()).all()
+    creators = (
+        db.query(User)
+        .filter(User.username.in_(creator_usernames))
+        .order_by(User.user_id.asc())
+        .all()
+    )
     creator_ids = [user.user_id for user in creators]
 
     def random_creator_sequence(total: int) -> list[int]:
@@ -352,7 +371,11 @@ def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
 
     if db.query(Patient).count() > 0:
         existing_rows = db.query(Patient).order_by(Patient.patient_id.asc()).all()
-        existing_creator_ids = {row.created_by_user_id for row in existing_rows if row.created_by_user_id is not None}
+        existing_creator_ids = {
+            row.created_by_user_id
+            for row in existing_rows
+            if row.created_by_user_id is not None
+        }
         if creator_ids and len(existing_creator_ids) <= 1:
             randomized = random_creator_sequence(len(existing_rows))
             for index, row in enumerate(existing_rows):
@@ -364,10 +387,46 @@ def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
     rows = patient_rows[1:]
     if not rows:
         rows = [
-            ["10001", "Rahul Menon", "Aluva", "27463", "Urban", "+91-98765-43210", "Male", "O+"],
-            ["10002", "Anju Thomas", "Thrissur", "22245", "Rural", "+91-87654-32109", "Female", "A+"],
-            ["10003", "Faisal Rahman", "Malappuram", "39661", "Near Water-body", "+91-76543-21098", "Male", "B-"],
-            ["10004", "Lakshmi Pillai", "Varkala", "17581", "Rural", "+91-65432-10987", "Female", "AB+"],
+            [
+                "10001",
+                "Rahul Menon",
+                "Aluva",
+                "27463",
+                "Urban",
+                "+91-98765-43210",
+                "Male",
+                "O+",
+            ],
+            [
+                "10002",
+                "Anju Thomas",
+                "Thrissur",
+                "22245",
+                "Rural",
+                "+91-87654-32109",
+                "Female",
+                "A+",
+            ],
+            [
+                "10003",
+                "Faisal Rahman",
+                "Malappuram",
+                "39661",
+                "Near Water-body",
+                "+91-76543-21098",
+                "Male",
+                "B-",
+            ],
+            [
+                "10004",
+                "Lakshmi Pillai",
+                "Varkala",
+                "17581",
+                "Rural",
+                "+91-65432-10987",
+                "Female",
+                "AB+",
+            ],
         ]
 
     limit = int(os.getenv("HIS_PATIENT_SEED_LIMIT", "300"))
@@ -395,7 +454,9 @@ def seed_patients(db: Session, his_data: dict[str, list[list[str]]]):
         db.commit()
 
 
-def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]) -> dict[int, int]:
+def seed_drugs_and_batches(
+    db: Session, his_data: dict[str, list[list[str]]]
+) -> dict[int, int]:
     """
     Ensure core drugs exist in an idempotent way and return a source-id -> drug_id map.
 
@@ -462,7 +523,10 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]) ->
                 candidate.strength = strength.strip()
             if not candidate.schedule_type and schedule_type:
                 candidate.schedule_type = schedule_type.strip()
-            if not candidate.low_stock_threshold or int(candidate.low_stock_threshold) <= 0:
+            if (
+                not candidate.low_stock_threshold
+                or int(candidate.low_stock_threshold) <= 0
+            ):
                 candidate.low_stock_threshold = max(1, threshold)
             candidate.is_active = True
 
@@ -516,13 +580,21 @@ def seed_drugs_and_batches(db: Session, his_data: dict[str, list[list[str]]]) ->
     return source_to_drug_id
 
 
-def seed_drug_batches(db: Session, his_data: dict[str, list[list[str]]], source_to_drug_id: dict[int, int]):
-    supplier_ids = [s.supplier_id for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()]
+def seed_drug_batches(
+    db: Session, his_data: dict[str, list[list[str]]], source_to_drug_id: dict[int, int]
+):
+    supplier_ids = [
+        s.supplier_id
+        for s in db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()
+    ]
     if not supplier_ids:
         logger.warning("Skipping drug batch seed because no suppliers exist")
         return
 
-    existing_batches = {batch.batch_no: batch for batch in db.query(DrugBatch).order_by(DrugBatch.batch_id.asc()).all()}
+    existing_batches = {
+        batch.batch_no: batch
+        for batch in db.query(DrugBatch).order_by(DrugBatch.batch_id.asc()).all()
+    }
     valid_drug_ids = {row[0] for row in db.query(Drug.drug_id).all()}
 
     batch_rows = his_data.get("Drug_Batch", [])[1:] or FALLBACK_BATCH_ROWS
@@ -535,7 +607,11 @@ def seed_drug_batches(db: Session, his_data: dict[str, list[list[str]]], source_
                 continue
 
             source_drug_id = _safe_int(row[1])
-            mapped_drug_id = source_to_drug_id.get(source_drug_id) if source_drug_id is not None else None
+            mapped_drug_id = (
+                source_to_drug_id.get(source_drug_id)
+                if source_drug_id is not None
+                else None
+            )
             if mapped_drug_id is None and source_drug_id in valid_drug_ids:
                 mapped_drug_id = source_drug_id
 
@@ -543,10 +619,16 @@ def seed_drug_batches(db: Session, his_data: dict[str, list[list[str]]], source_
                 skipped_rows += 1
                 continue
 
-            batch_no = (row[2] or "").strip() or f"AUTO-BATCH-{mapped_drug_id}-{idx + 1}"
-            expiry_date = excel_date_to_date(row[3]) or (date.today() + timedelta(days=365))
+            batch_no = (
+                row[2] or ""
+            ).strip() or f"AUTO-BATCH-{mapped_drug_id}-{idx + 1}"
+            expiry_date = excel_date_to_date(row[3]) or (
+                date.today() + timedelta(days=365)
+            )
             purchase_price = _safe_float(row[4]) or 1.0
-            selling_price = _safe_float(row[5]) or max(1.0, round(purchase_price * 1.2, 2))
+            selling_price = _safe_float(row[5]) or max(
+                1.0, round(purchase_price * 1.2, 2)
+            )
             quantity_available = _safe_int(row[6])
             if quantity_available is None:
                 quantity_available = 0
@@ -579,14 +661,20 @@ def seed_drug_batches(db: Session, his_data: dict[str, list[list[str]]], source_
                 existing_batches[batch_no] = new_batch
 
         batches_without_supplier = (
-            db.query(DrugBatch).filter(DrugBatch.supplier_id.is_(None)).order_by(DrugBatch.batch_id.asc()).all()
+            db.query(DrugBatch)
+            .filter(DrugBatch.supplier_id.is_(None))
+            .order_by(DrugBatch.batch_id.asc())
+            .all()
         )
         for idx, batch in enumerate(batches_without_supplier):
             batch.supplier_id = supplier_ids[idx % len(supplier_ids)]
 
         db.commit()
         if skipped_rows:
-            logger.warning("Skipped %d drug batch rows due to invalid/missing drug mapping", skipped_rows)
+            logger.warning(
+                "Skipped %d drug batch rows due to invalid/missing drug mapping",
+                skipped_rows,
+            )
     except Exception:
         db.rollback()
         logger.exception("Drug batch seeding failed; rolled back pending batch changes")
@@ -595,19 +683,70 @@ def seed_drug_batches(db: Session, his_data: dict[str, list[list[str]]], source_
 
 def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
     fallback = [
-        ("Global Pharma Distributors", "Anoop Mathew", "+91-98112-34567", "sales@globalpharma.in", "Kochi, Kerala"),
-        ("Medline Lifesciences", "Reshma Nair", "+91-98220-11446", "contact@medline.in", "Thrissur, Kerala"),
-        ("CarePlus Wholesale", "Javed Rahman", "+91-98730-22011", "hello@carepluswholesale.in", "Kozhikode, Kerala"),
-        ("Aster Drug Agencies", "Simi Joseph", "+91-99614-77880", "orders@asterdrug.in", "Ernakulam, Kerala"),
-        ("Nova Med Supply", "Arun George", "+91-98465-42220", "support@novamed.in", "Palakkad, Kerala"),
-        ("Prime Health Traders", "Priya S", "+91-98957-31009", "ops@primehealth.in", "Kannur, Kerala"),
-        ("Lifecare Therapeutics", "Nikhil Das", "+91-94471-22008", "info@lifecaretx.in", "Kottayam, Kerala"),
-        ("Unity Pharma Network", "Anita Roy", "+91-93882-11773", "connect@unitypharma.in", "Thiruvananthapuram, Kerala"),
+        (
+            "Global Pharma Distributors",
+            "Anoop Mathew",
+            "+91-98112-34567",
+            "sales@globalpharma.in",
+            "Kochi, Kerala",
+        ),
+        (
+            "Medline Lifesciences",
+            "Reshma Nair",
+            "+91-98220-11446",
+            "contact@medline.in",
+            "Thrissur, Kerala",
+        ),
+        (
+            "CarePlus Wholesale",
+            "Javed Rahman",
+            "+91-98730-22011",
+            "hello@carepluswholesale.in",
+            "Kozhikode, Kerala",
+        ),
+        (
+            "Aster Drug Agencies",
+            "Simi Joseph",
+            "+91-99614-77880",
+            "orders@asterdrug.in",
+            "Ernakulam, Kerala",
+        ),
+        (
+            "Nova Med Supply",
+            "Arun George",
+            "+91-98465-42220",
+            "support@novamed.in",
+            "Palakkad, Kerala",
+        ),
+        (
+            "Prime Health Traders",
+            "Priya S",
+            "+91-98957-31009",
+            "ops@primehealth.in",
+            "Kannur, Kerala",
+        ),
+        (
+            "Lifecare Therapeutics",
+            "Nikhil Das",
+            "+91-94471-22008",
+            "info@lifecaretx.in",
+            "Kottayam, Kerala",
+        ),
+        (
+            "Unity Pharma Network",
+            "Anita Roy",
+            "+91-93882-11773",
+            "connect@unitypharma.in",
+            "Thiruvananthapuram, Kerala",
+        ),
     ]
 
     existing_suppliers = db.query(Supplier).order_by(Supplier.supplier_id.asc()).all()
     if existing_suppliers:
-        fallback_by_name = {name: (contact, phone, email, address) for name, contact, phone, email, address in fallback}
+        fallback_by_name = {
+            name: (contact, phone, email, address)
+            for name, contact, phone, email, address in fallback
+        }
         for supplier in existing_suppliers:
             if supplier.name in fallback_by_name:
                 contact, phone, email, address = fallback_by_name[supplier.name]
@@ -629,7 +768,9 @@ def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
                 if not name:
                     continue
                 contact_blob = (row[3] if len(row) > 3 else "") or ""
-                phone_guess = contact_blob.split("/")[0].strip() if contact_blob else None
+                phone_guess = (
+                    contact_blob.split("/")[0].strip() if contact_blob else None
+                )
                 suppliers_to_add.append(
                     Supplier(
                         name=name,
@@ -643,14 +784,24 @@ def seed_suppliers(db: Session, his_data: dict[str, list[list[str]]]):
 
         if not suppliers_to_add:
             suppliers_to_add = [
-                Supplier(name=n, contact_person=c, phone=p, email=e, address=a, is_active=True)
+                Supplier(
+                    name=n,
+                    contact_person=c,
+                    phone=p,
+                    email=e,
+                    address=a,
+                    is_active=True,
+                )
                 for n, c, p, e, a in fallback
             ]
 
         db.add_all(suppliers_to_add)
         db.commit()
 
-def _daterange_points(start_dt: datetime, end_dt: datetime, step_days: int) -> list[datetime]:
+
+def _daterange_points(
+    start_dt: datetime, end_dt: datetime, step_days: int
+) -> list[datetime]:
     points: list[datetime] = []
     current = start_dt
     while current <= end_dt:
@@ -659,7 +810,9 @@ def _daterange_points(start_dt: datetime, end_dt: datetime, step_days: int) -> l
     return points
 
 
-def _ensure_batch_for_drug(db: Session, drug: Drug, supplier_id: int | None, ref_dt: datetime) -> DrugBatch:
+def _ensure_batch_for_drug(
+    db: Session, drug: Drug, supplier_id: int | None, ref_dt: datetime
+) -> DrugBatch:
     batch = (
         db.query(DrugBatch)
         .filter(DrugBatch.drug_id == drug.drug_id)
@@ -692,37 +845,65 @@ def seed_operational_history(db: Session):
 
     users = db.query(User).order_by(User.user_id.asc()).all()
     patients = db.query(Patient).order_by(Patient.patient_id.asc()).all()
-    drugs = db.query(Drug).filter(Drug.is_active.is_(True)).order_by(Drug.drug_id.asc()).all()
-    suppliers = db.query(Supplier).filter(Supplier.is_active.is_(True)).order_by(Supplier.supplier_id.asc()).all()
+    drugs = (
+        db.query(Drug)
+        .filter(Drug.is_active.is_(True))
+        .order_by(Drug.drug_id.asc())
+        .all()
+    )
+    suppliers = (
+        db.query(Supplier)
+        .filter(Supplier.is_active.is_(True))
+        .order_by(Supplier.supplier_id.asc())
+        .all()
+    )
 
     if not users or not patients or not drugs or not suppliers:
         return
 
     role_map = {user.user_id: (user.role.name if user.role else "") for user in users}
-    doctor_users = [u for u in users if role_map.get(u.user_id) in {"chief_medical_officer", "system_admin"}] or users[:]
+    doctor_users = [
+        u
+        for u in users
+        if role_map.get(u.user_id) in {"chief_medical_officer", "system_admin"}
+    ] or users[:]
     pharmacy_users = [
         u
         for u in users
-        if role_map.get(u.user_id) in {"pharmacy_manager", "senior_pharmacist", "staff_pharmacist", "inventory_clerk"}
+        if role_map.get(u.user_id)
+        in {
+            "pharmacy_manager",
+            "senior_pharmacist",
+            "staff_pharmacist",
+            "inventory_clerk",
+        }
     ] or users[:]
 
     span_days = max(1, (end_dt - start_dt).days)
     para_drug = db.query(Drug).filter(Drug.drug_name == "Paracetamol").first()
     para_batch = None
     if para_drug:
-        para_batch = _ensure_batch_for_drug(db, para_drug, suppliers[0].supplier_id, datetime(2024, 1, 1, 10, 0, 0))
+        para_batch = _ensure_batch_for_drug(
+            db, para_drug, suppliers[0].supplier_id, datetime(2024, 1, 1, 10, 0, 0)
+        )
         if int(para_batch.quantity_available or 0) < 600:
             para_batch.quantity_available = 900
 
     for idx, supplier in enumerate(suppliers):
-        supplier.created_at = start_dt + timedelta(days=int((idx * span_days) / max(1, len(suppliers) - 1)))
+        supplier.created_at = start_dt + timedelta(
+            days=int((idx * span_days) / max(1, len(suppliers) - 1))
+        )
     for idx, patient in enumerate(patients):
-        patient.created_at = start_dt + timedelta(days=int((idx * span_days) / max(1, len(patients) - 1)))
+        patient.created_at = start_dt + timedelta(
+            days=int((idx * span_days) / max(1, len(patients) - 1))
+        )
         if patient.created_by_user_id is None:
             patient.created_by_user_id = random.choice(doctor_users).user_id
     db.commit()
 
-    po_dates = _daterange_points(datetime(2024, 1, 7, 11, 0, 0), datetime(2025, 3, 5, 14, 0, 0), 9)
+    po_dates = _daterange_points(
+        datetime(2024, 1, 7, 11, 0, 0), datetime(2025, 3, 5, 14, 0, 0), 9
+    )
     existing_po_days = {
         row[0]
         for row in db.execute(
@@ -738,8 +919,12 @@ def seed_operational_history(db: Session):
             continue
         supplier = random.choice(suppliers)
         ordered_by = random.choice(pharmacy_users)
-        status = random.choices(["received", "pending", "cancelled"], weights=[75, 20, 5], k=1)[0]
-        received_at = dt + timedelta(days=random.randint(1, 4)) if status == "received" else None
+        status = random.choices(
+            ["received", "pending", "cancelled"], weights=[75, 20, 5], k=1
+        )[0]
+        received_at = (
+            dt + timedelta(days=random.randint(1, 4)) if status == "received" else None
+        )
 
         po = PurchaseOrder(
             supplier_id=supplier.supplier_id,
@@ -755,7 +940,11 @@ def seed_operational_history(db: Session):
         chosen_drugs = random.sample(drugs, k=min(random.randint(2, 4), len(drugs)))
         for drug in chosen_drugs:
             qty_ordered = random.randint(80, 260)
-            qty_received = qty_ordered if status == "received" else random.randint(0, max(1, qty_ordered // 3))
+            qty_received = (
+                qty_ordered
+                if status == "received"
+                else random.randint(0, max(1, qty_ordered // 3))
+            )
             db.add(
                 PurchaseOrderItem(
                     po_id=po.po_id,
@@ -767,13 +956,18 @@ def seed_operational_history(db: Session):
             )
             if qty_received > 0:
                 batch = _ensure_batch_for_drug(db, drug, supplier.supplier_id, dt)
-                batch.quantity_available = max(0, int(batch.quantity_available or 0)) + qty_received
+                batch.quantity_available = (
+                    max(0, int(batch.quantity_available or 0)) + qty_received
+                )
 
     db.commit()
 
     if (
-        db.execute(text("SELECT COUNT(*) FROM purchase_orders WHERE DATE(created_at)=DATE '2025-03-05'"))
-        .scalar_one()
+        db.execute(
+            text(
+                "SELECT COUNT(*) FROM purchase_orders WHERE DATE(created_at)=DATE '2025-03-05'"
+            )
+        ).scalar_one()
         == 0
     ):
         supplier = random.choice(suppliers)
@@ -801,11 +995,15 @@ def seed_operational_history(db: Session):
             )
         db.commit()
 
-    rx_dates = _daterange_points(datetime(2024, 1, 3, 9, 30, 0), datetime(2025, 3, 5, 17, 30, 0), 4)
+    rx_dates = _daterange_points(
+        datetime(2024, 1, 3, 9, 30, 0), datetime(2025, 3, 5, 17, 30, 0), 4
+    )
     existing_rx_days = {
         row[0]
         for row in db.execute(
-            text("SELECT DATE(created_at) FROM prescriptions WHERE created_at >= :start_dt AND created_at <= :end_dt"),
+            text(
+                "SELECT DATE(created_at) FROM prescriptions WHERE created_at >= :start_dt AND created_at <= :end_dt"
+            ),
             {"start_dt": start_dt, "end_dt": end_dt},
         ).fetchall()
     }
@@ -815,12 +1013,22 @@ def seed_operational_history(db: Session):
             continue
         patient = random.choice(patients)
         doctor = random.choice(doctor_users)
-        status = random.choices(["dispensed", "open", "cancelled"], weights=[78, 18, 4], k=1)[0]
+        status = random.choices(
+            ["dispensed", "open", "cancelled"], weights=[78, 18, 4], k=1
+        )[0]
 
         prescription = Prescription(
             patient_id=patient.patient_id,
             doctor_name=doctor.full_name or doctor.username,
-            diagnosis=random.choice(["Fever", "Viral infection", "Pain", "Hypertension follow-up", "Diabetes follow-up"]),
+            diagnosis=random.choice(
+                [
+                    "Fever",
+                    "Viral infection",
+                    "Pain",
+                    "Hypertension follow-up",
+                    "Diabetes follow-up",
+                ]
+            ),
             notes="Auto-seeded clinical record",
             status=status,
             created_by_user_id=doctor.user_id,
@@ -852,14 +1060,18 @@ def seed_operational_history(db: Session):
                 .first()
             )
             if not batch:
-                batch = _ensure_batch_for_drug(db, drug, random.choice(suppliers).supplier_id, dt)
+                batch = _ensure_batch_for_drug(
+                    db, drug, random.choice(suppliers).supplier_id, dt
+                )
 
             available = int(batch.quantity_available or 0)
             if available <= 0:
                 batch.quantity_available = random.randint(120, 260)
                 available = int(batch.quantity_available)
 
-            qty_dispensed = min(qty_prescribed, max(1, random.randint(4, 24)), available)
+            qty_dispensed = min(
+                qty_prescribed, max(1, random.randint(4, 24)), available
+            )
             batch.quantity_available = max(0, available - qty_dispensed)
 
             db.add(
@@ -877,8 +1089,11 @@ def seed_operational_history(db: Session):
     db.commit()
 
     if (
-        db.execute(text("SELECT COUNT(*) FROM prescriptions WHERE DATE(created_at)=DATE '2025-03-05'"))
-        .scalar_one()
+        db.execute(
+            text(
+                "SELECT COUNT(*) FROM prescriptions WHERE DATE(created_at)=DATE '2025-03-05'"
+            )
+        ).scalar_one()
         == 0
     ):
         patient = random.choice(patients)
@@ -906,7 +1121,9 @@ def seed_operational_history(db: Session):
                 quantity_prescribed=qty,
             )
         )
-        batch = _ensure_batch_for_drug(db, drug, random.choice(suppliers).supplier_id, dt)
+        batch = _ensure_batch_for_drug(
+            db, drug, random.choice(suppliers).supplier_id, dt
+        )
         available = int(batch.quantity_available or 0)
         if available < qty:
             batch.quantity_available = qty + 80
@@ -995,11 +1212,15 @@ def seed_operational_history(db: Session):
         "dispense_drug",
         "update_inventory",
     ]
-    log_dates = _daterange_points(datetime(2024, 1, 2, 8, 0, 0), datetime(2025, 3, 5, 20, 0, 0), 3)
+    log_dates = _daterange_points(
+        datetime(2024, 1, 2, 8, 0, 0), datetime(2025, 3, 5, 20, 0, 0), 3
+    )
     existing_log_days = {
         row[0]
         for row in db.execute(
-            text("SELECT DATE(timestamp) FROM audit_logs WHERE timestamp >= :start_dt AND timestamp <= :end_dt"),
+            text(
+                "SELECT DATE(timestamp) FROM audit_logs WHERE timestamp >= :start_dt AND timestamp <= :end_dt"
+            ),
             {"start_dt": start_dt, "end_dt": end_dt},
         ).fetchall()
     }
@@ -1008,7 +1229,9 @@ def seed_operational_history(db: Session):
             continue
         actor = random.choice(users)
         action = random.choice(actions)
-        target_table = random.choice(["purchase_orders", "prescriptions", "dispensing_records", "drug_batches"])
+        target_table = random.choice(
+            ["purchase_orders", "prescriptions", "dispensing_records", "drug_batches"]
+        )
         db.add(
             AuditLog(
                 actor_user_id=actor.user_id,
@@ -1022,7 +1245,9 @@ def seed_operational_history(db: Session):
         )
     db.commit()
 
-    note_dates = _daterange_points(datetime(2024, 1, 5, 10, 30, 0), datetime(2025, 3, 5, 16, 30, 0), 6)
+    note_dates = _daterange_points(
+        datetime(2024, 1, 5, 10, 30, 0), datetime(2025, 3, 5, 16, 30, 0), 6
+    )
     note_dates.append(datetime(2025, 3, 5, 16, 30, 0))
     titles = [
         "Low stock warning",
@@ -1033,7 +1258,9 @@ def seed_operational_history(db: Session):
     existing_note_days = {
         row[0]
         for row in db.execute(
-            text("SELECT DATE(created_at) FROM notifications WHERE created_at >= :start_dt AND created_at <= :end_dt"),
+            text(
+                "SELECT DATE(created_at) FROM notifications WHERE created_at >= :start_dt AND created_at <= :end_dt"
+            ),
             {"start_dt": start_dt, "end_dt": end_dt},
         ).fetchall()
     }
@@ -1092,8 +1319,12 @@ def seed_all(db: Session):
     seed_mode = os.getenv("SEED_MODE", "sql_file").strip().lower()
     if seed_mode in {"sql_file", "hospital_sql"}:
         dataset_path = _resolve_hospital_sql_path()
-        reset_before_load = os.getenv("HOSPITAL_SQL_RESET", "true").strip().lower() == "true"
-        sync_legacy = os.getenv("SYNC_TO_LEGACY_TABLES", "true").strip().lower() == "true"
+        reset_before_load = (
+            os.getenv("HOSPITAL_SQL_RESET", "true").strip().lower() == "true"
+        )
+        sync_legacy = (
+            os.getenv("SYNC_TO_LEGACY_TABLES", "true").strip().lower() == "true"
+        )
 
         if reset_before_load:
             _reset_hospital_sql_tables(db)
@@ -1193,6 +1424,7 @@ def _sync_legacy_app_tables_from_hospital_sql(db: Session):
                     WHEN 'pharmacy manager' THEN 'pharmacy_manager'
                     WHEN 'senior pharmacist' THEN 'senior_pharmacist'
                     WHEN 'staff pharmacist' THEN 'staff_pharmacist'
+                    WHEN 'clerk' THEN 'inventory_clerk'
                     WHEN 'inventory clerk' THEN 'inventory_clerk'
                     ELSE regexp_replace(lower(r.role_name), '[^a-z0-9]+', '_', 'g')
                 END,
