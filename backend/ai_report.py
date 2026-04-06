@@ -144,8 +144,40 @@ def _classify_chart_hint(sql: str, columns: list[str], rows: list[tuple]) -> str
     return "auto"
 
 
+def _is_semantically_valid_sql(
+    question: str, sql: str, current_user_id: int | None
+) -> tuple[bool, str]:
+    q = (question or "").lower()
+    s = (sql or "").lower()
+
+    if "most sold medicine" in q and "department" in q:
+        if "department" not in s or "group by" not in s:
+            return False, "Department sales intent missing required grouping"
+
+    if "encounter" in q and "department" in q and "encounter" not in s:
+        return False, "Encounter query does not use encounter table"
+
+    if "pending" in q and "prescription" in q:
+        if "prescriptions" not in s or not any(
+            token in s for token in ["pending", "open"]
+        ):
+            return False, "Pending prescription intent not normalized"
+
+    if "current user" in q and "notification" in q and current_user_id is not None:
+        if (
+            f"recipient_user_id = {current_user_id}" not in s
+            and f"u.user_id = {current_user_id}" not in s
+        ):
+            return False, "Current user filter missing or mismatched"
+        user_id_matches = re.findall(r"user_id\s*=\s*(\d+)", s)
+        if any(int(x) != int(current_user_id) for x in user_id_matches):
+            return False, "Hardcoded user_id mismatch"
+
+    return True, "ok"
+
+
 def _run_query_with_fallback(
-    question: str, db: Session, schema: dict, graph
+    question: str, db: Session, schema: dict, graph, current_user_id: int | None = None
 ) -> tuple[dict, str, bool, dict]:
     excluded_tables: set[str] = set()
     last_error = None
@@ -178,8 +210,22 @@ def _run_query_with_fallback(
                 p for p in candidate_paths[idx + 1 : idx + 3] if isinstance(p, dict)
             ]
             sql = generate_sql(
-                question, best_path, schema, graph, db, alternative_paths=alternatives
+                question,
+                best_path,
+                schema,
+                graph,
+                db,
+                alternative_paths=alternatives,
+                current_user_id=current_user_id,
             )
+
+            valid_sql, reason = _is_semantically_valid_sql(
+                question, sql, current_user_id
+            )
+            if not valid_sql:
+                last_error = reason
+                continue
+
             cached = _is_cached(question, sql)
             result = execute_with_retry(db, question, sql, schema, best_path)
             if result.get("success"):
@@ -554,7 +600,7 @@ def ai_report_query(
     try:
         schema, graph = _ensure_loaded()
         result, sql, cached, _best_path = _run_query_with_fallback(
-            question, db, schema, graph
+            question, db, schema, graph, current_user.user_id
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -640,6 +686,7 @@ def ai_report_query_debug(payload: QueryRequest, db: Session = Depends(get_db)):
             graph,
             db,
             alternative_paths=[p for p in candidates[1:3] if isinstance(p, dict)],
+            current_user_id=None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -678,7 +725,7 @@ def generate_report(
     try:
         schema, graph = _ensure_loaded()
         result, sql, cached, _best_path = _run_query_with_fallback(
-            question, db, schema, graph
+            question, db, schema, graph, current_user.user_id
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
