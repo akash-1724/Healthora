@@ -165,6 +165,10 @@ def execute_with_retry(
             }
         except Exception as exc:
             last_error = str(exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             relation_missing = _extract_missing_relation(last_error)
             if attempt >= max_attempts:
                 break

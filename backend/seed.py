@@ -37,7 +37,7 @@ DEFAULT_ROLES = [
     ("pharmacy_manager", "Pharmacy Manager"),
     ("senior_pharmacist", "Senior Pharmacist"),
     ("staff_pharmacist", "Staff Pharmacist"),
-    ("inventory_clerk", "Inventory Clerk"),
+    ("inventory_clerk", "Clerk"),
 ]
 
 ROLE_LABEL_TO_CODE = {
@@ -46,6 +46,7 @@ ROLE_LABEL_TO_CODE = {
     "Pharmacy Manager": "pharmacy_manager",
     "Senior Pharmacist": "senior_pharmacist",
     "Staff Pharmacist": "staff_pharmacist",
+    "Clerk": "inventory_clerk",
     "Inventory Clerk": "inventory_clerk",
 }
 

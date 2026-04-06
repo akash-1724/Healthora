@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 import re
 from datetime import date, datetime
 from decimal import Decimal
@@ -63,6 +64,7 @@ class QueryResponse(BaseModel):
     cached: bool = False
     warning: str | None = None
     chart_hint: str = "auto"
+    truncated: bool = False
 
 
 class QueryDebugResponse(BaseModel):
@@ -566,18 +568,32 @@ def ai_report_query(
     )
     db.commit()
 
+    response_limit = int(os.getenv("AI_RESPONSE_MAX_ROWS", "200"))
+    safe_rows = [[_json_safe(value) for value in row] for row in result["rows"]]
+    truncated = len(safe_rows) > response_limit
+    if truncated:
+        safe_rows = safe_rows[:response_limit]
+
     return QueryResponse(
         question=question,
         sql=result["sql"],
         columns=result["columns"],
-        rows=[[_json_safe(value) for value in row] for row in result["rows"]],
+        rows=safe_rows,
         count=result["count"],
         success=True,
         cached=cached,
-        warning=_build_zero_rows_warning(question, result["count"]),
+        warning=(
+            _build_zero_rows_warning(question, result["count"])
+            or (
+                f"Showing first {response_limit} rows in UI. Use download for full result."
+                if truncated
+                else None
+            )
+        ),
         chart_hint=_classify_chart_hint(
             result.get("sql", ""), result.get("columns", []), result.get("rows", [])
         ),
+        truncated=truncated,
     )
 
 

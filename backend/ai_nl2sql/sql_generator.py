@@ -1,7 +1,11 @@
 import os
+from datetime import datetime, timedelta
 
 from groq import Groq
 from sqlalchemy import text
+
+_TABLE_HINT_CACHE: dict[tuple[str, str], tuple[datetime, str]] = {}
+HINT_CACHE_TTL_SECONDS = int(os.getenv("AI_HINT_CACHE_TTL_SECONDS", "900"))
 
 
 def _get_client() -> Groq:
@@ -74,18 +78,28 @@ def build_context(best_path: dict, schema: dict, graph) -> tuple[str, list[str]]
 
 def _collect_data_hints(best_path: dict, schema: dict, db) -> str:
     hints: list[str] = []
+    family = os.getenv("AI_SCHEMA_FAMILY", "legacy").strip().lower()
     for table in best_path.get("path", []):
         if table not in schema:
             continue
+        cache_key = (family, table)
+        cached = _TABLE_HINT_CACHE.get(cache_key)
+        if cached and datetime.utcnow() - cached[0] < timedelta(
+            seconds=HINT_CACHE_TTL_SECONDS
+        ):
+            hints.append(cached[1])
+            continue
+
         safe_table = quote_table_name(table)
+        table_hints: list[str] = []
         try:
             sample_rows = (
                 db.execute(text(f"SELECT * FROM {safe_table} LIMIT 2")).mappings().all()
             )
             if sample_rows:
-                hints.append(f"Sample {safe_table}: {sample_rows}")
+                table_hints.append(f"Sample {safe_table}: {sample_rows}")
         except Exception:
-            continue
+            pass
 
         text_cols = [
             col["name"]
@@ -113,7 +127,7 @@ def _collect_data_hints(best_path: dict, schema: dict, db) -> str:
                     if row.get("v") not in (None, "")
                 ]
                 if values and len(values) <= 12:
-                    hints.append(f"Distinct values {safe_table}.{col}: {values}")
+                    table_hints.append(f"Distinct values {safe_table}.{col}: {values}")
             except Exception:
                 continue
 
@@ -138,11 +152,16 @@ def _collect_data_hints(best_path: dict, schema: dict, db) -> str:
                     range_row.get("min_v") is not None
                     or range_row.get("max_v") is not None
                 ):
-                    hints.append(
+                    table_hints.append(
                         f"Date range {safe_table}.{col}: {range_row.get('min_v')} to {range_row.get('max_v')}"
                     )
             except Exception:
                 continue
+
+        if table_hints:
+            merged = "\n".join(table_hints)
+            _TABLE_HINT_CACHE[cache_key] = (datetime.utcnow(), merged)
+            hints.append(merged)
 
     return "\n".join(hints)
 
@@ -155,6 +174,22 @@ def generate_sql(
     db,
     alternative_paths: list[dict] | None = None,
 ) -> str:
+    q = (query or "").strip().lower()
+
+    if (
+        "doctor" in q
+        and "department" in q
+        and "doctor" in schema
+        and "department" in schema
+    ):
+        return (
+            "SELECT dep.name AS department, doc.name AS doctor_name "
+            "FROM doctor doc "
+            "LEFT JOIN department dep ON dep.department_id = doc.department_id "
+            "WHERE doc.name IS NOT NULL "
+            "ORDER BY dep.name, doc.name"
+        )
+
     context_text, join_conditions = build_context(best_path, schema, graph)
     data_hints = _collect_data_hints(best_path, schema, db)
     joins_text = "\n".join(join_conditions)
@@ -187,11 +222,13 @@ Rules:
 - Return ONLY SQL, no explanation.
 - Use SELECT only.
 - Prefer {preferred_family} schema family tables when possible.
-- If user asks about sales or revenue, prioritize dispensing_records + drug_batches + drugs and date filter on dispensing_records.dispensed_at.
-- If user asks about stock/expiry, prioritize drug_batches and filter on expiry_date/is_expired where relevant.
+- If user asks about sales or revenue and legacy tables are present, prioritize dispensing_records + drug_batches + drugs and date filter on dispensing_records.dispensed_at.
+- If user asks about sales or revenue and hospital-v2 tables are present, prioritize dispense + dispense_item + drug_batch + drug and date filter on dispense.dispense_date.
+- If user asks about stock/expiry, prioritize drug_batches or drug_batch and filter on expiry_date where relevant.
 - For drug-name searches, use case-insensitive matching with ILIKE and prefer `(d.drug_name ILIKE '%name%' OR d.generic_name ILIKE '%name%')` instead of strict equality.
 - drug_id and batch_id are different fields. If user asks for drug id, filter on drug_id not batch_id.
 - If path contains dispense_item without drug/drugs table, bridge via drug_batch (dispense_item.batch_id = drug_batch.batch_id).
+- If question asks "doctor in each department", prefer doctor + department tables and avoid prescriptions.created_by_user_id joins.
 - Respect exact table casing for special names like "User".
 - Use enum values exactly from Data hints when filtering status/type columns.
 """

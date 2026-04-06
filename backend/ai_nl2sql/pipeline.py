@@ -1,5 +1,6 @@
 import os
 from itertools import combinations
+from collections import OrderedDict
 
 import networkx as nx
 
@@ -12,6 +13,7 @@ DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
 TOP_K_TABLES = int(os.getenv("AI_LINKER_TOP_K", "10"))
 MAX_PATH_CANDIDATES = int(os.getenv("AI_MAX_PATH_CANDIDATES", "5"))
 STEINER_MIN_TERMINALS = int(os.getenv("AI_STEINER_MIN_TERMINALS", "3"))
+PLAN_CACHE_SIZE = int(os.getenv("AI_PLAN_CACHE_SIZE", "300"))
 
 JOIN_INTENT_KEYWORDS = {
     "join",
@@ -26,6 +28,8 @@ JOIN_INTENT_KEYWORDS = {
     "compared",
     "compare",
 }
+
+_PLAN_CACHE: OrderedDict[tuple[str, tuple[str, ...]], list[dict]] = OrderedDict()
 
 
 def score_relevant_table_coverage(path: list[str], relevant_tables: list[str]) -> float:
@@ -58,6 +62,55 @@ def _expand_tables_one_hop(tables: list[str], graph) -> list[str]:
 def _looks_like_multi_table_query(query: str) -> bool:
     tokens = set((query or "").lower().replace("_", " ").split())
     return bool(tokens.intersection(JOIN_INTENT_KEYWORDS))
+
+
+def _normalize_query(query: str) -> str:
+    return " ".join((query or "").strip().lower().split())
+
+
+def _get_plan_cache_key(query: str, excluded: set[str]) -> tuple[str, tuple[str, ...]]:
+    return (_normalize_query(query), tuple(sorted(excluded)))
+
+
+def _cache_get(query: str, excluded: set[str]) -> list[dict] | None:
+    key = _get_plan_cache_key(query, excluded)
+    value = _PLAN_CACHE.get(key)
+    if value is None:
+        return None
+    _PLAN_CACHE.move_to_end(key)
+    return value
+
+
+def _cache_set(query: str, excluded: set[str], candidates: list[dict]) -> None:
+    key = _get_plan_cache_key(query, excluded)
+    _PLAN_CACHE[key] = candidates
+    _PLAN_CACHE.move_to_end(key)
+    while len(_PLAN_CACHE) > PLAN_CACHE_SIZE:
+        _PLAN_CACHE.popitem(last=False)
+
+
+def _intent_priority_tables(query: str) -> list[str]:
+    q = _normalize_query(query)
+    priorities: list[str] = []
+    if "doctor" in q and "department" in q:
+        priorities.extend(["doctor", "department"])
+    if any(token in q for token in ["supplier", "purchase order", "po"]):
+        priorities.extend(["suppliers", "purchase_orders", "purchase_order_items"])
+    if any(token in q for token in ["dispense", "sales", "revenue"]):
+        priorities.extend(["dispensing_records", "drug_batches", "drugs"])
+    return priorities
+
+
+def _apply_intent_priority(paths: list[dict], query: str) -> list[dict]:
+    priority_tables = set(_intent_priority_tables(query))
+    if not priority_tables:
+        return paths
+    for row in paths:
+        row["intent_bonus"] = 0.0
+        if priority_tables.intersection(set(row.get("path", []))):
+            row["intent_bonus"] = 0.2
+            row["final_score"] = round(float(row["final_score"]) + 0.2, 4)
+    return paths
 
 
 def _get_steiner_paths(graph, terminals: list[str]) -> list[list[str]]:
@@ -99,6 +152,16 @@ def run_pipeline(
     return_candidates: bool = False,
 ):
     excluded = exclude_tables or set()
+    cached_candidates = _cache_get(query, excluded)
+    if cached_candidates:
+        if DEBUG:
+            print(
+                f"[PIPELINE] plan_cache_hit key={_get_plan_cache_key(query, excluded)}"
+            )
+        if return_candidates:
+            return cached_candidates[:MAX_PATH_CANDIDATES]
+        return cached_candidates[0] if cached_candidates else None
+
     if DEBUG:
         print("=" * 70)
         print(f"[PIPELINE] query={query}")
@@ -112,9 +175,14 @@ def run_pipeline(
             print(
                 f"[PIPELINE] rag_hit score={rag_score:.4f} path={rag_match.get('best_path', {}).get('path', [])}"
             )
-        if return_candidates:
-            return [rag_match.get("best_path")]
-        return rag_match.get("best_path")
+        rag_candidates = [rag_match.get("best_path")]
+        rag_candidates = [p for p in rag_candidates if isinstance(p, dict)]
+        if rag_candidates:
+            _cache_set(query, excluded, rag_candidates)
+            if return_candidates:
+                return rag_candidates
+            return rag_candidates[0]
+        return [] if return_candidates else None
 
     relevant_tables = get_relevant_tables(query, schema, top_k=TOP_K_TABLES)
     relevant_tables = [table for table in relevant_tables if table not in excluded]
@@ -124,6 +192,8 @@ def run_pipeline(
         scored_single = score_all_paths(query, [single], schema)
         if not scored_single:
             return [] if return_candidates else None
+        scored_single = _apply_intent_priority(scored_single, query)
+        _cache_set(query, excluded, scored_single)
         if return_candidates:
             return scored_single[:MAX_PATH_CANDIDATES]
         return scored_single[0]
@@ -171,7 +241,10 @@ def run_pipeline(
         result["final_score"] = round(result["final_score"] + (coverage * 0.8), 4)
 
     scored.sort(key=lambda item: item["final_score"], reverse=True)
+    scored = _apply_intent_priority(scored, query)
+    scored.sort(key=lambda item: item["final_score"], reverse=True)
     top_scored = scored[:MAX_PATH_CANDIDATES]
+    _cache_set(query, excluded, top_scored)
     if DEBUG and scored:
         print(f"[PIPELINE] total_paths={len(unique_paths)}")
         print(
