@@ -1,4 +1,5 @@
 import os
+import re
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -13,8 +14,19 @@ NULLABLE_WEIGHT = float(os.getenv("AI_PATH_NULLABLE_WEIGHT", "0.10"))
 def _model() -> SentenceTransformer:
     global _MODEL
     if _MODEL is None:
-        _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        try:
+            _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception:
+            _MODEL = False
     return _MODEL
+
+
+def _token_overlap_score(query: str, text: str) -> float:
+    q = set(re.findall(r"[a-z0-9_]+", (query or "").lower()))
+    t = set(re.findall(r"[a-z0-9_]+", (text or "").lower()))
+    if not q or not t:
+        return 0.0
+    return len(q.intersection(t)) / max(1, len(q))
 
 
 TABLE_DESCRIPTIONS = {
@@ -132,6 +144,8 @@ def score_path_length(path: list[str]) -> float:
 
 def score_semantic_similarity(query: str, path_description: str) -> float:
     model = _model()
+    if not model:
+        return _token_overlap_score(query, path_description)
     query_embedding = model.encode([query])
     path_embedding = model.encode([path_description])
     return float(cosine_similarity(query_embedding, path_embedding)[0][0])

@@ -1,4 +1,5 @@
 import os
+import re
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -12,8 +13,19 @@ SCHEMA_FAMILY = os.getenv("AI_SCHEMA_FAMILY", "legacy").strip().lower()
 def _model() -> SentenceTransformer:
     global _MODEL
     if _MODEL is None:
-        _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        try:
+            _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception:
+            _MODEL = False
     return _MODEL
+
+
+def _token_overlap_score(query: str, text: str) -> float:
+    q = set(re.findall(r"[a-z0-9_]+", (query or "").lower()))
+    t = set(re.findall(r"[a-z0-9_]+", (text or "").lower()))
+    if not q or not t:
+        return 0.0
+    return len(q.intersection(t)) / max(1, len(q))
 
 
 TABLE_DESCRIPTIONS = {
@@ -200,7 +212,7 @@ def get_relevant_tables(query: str, schema: dict, top_k: int = 10) -> list[str]:
     has_v2_tables = any(table in available for table in V2_PRIORITY_TABLES)
 
     model = _model()
-    query_embedding = model.encode([query])
+    query_embedding = model.encode([query]) if model else None
     scored = []
     for table in allowed_tables:
         description = TABLE_DESCRIPTIONS.get(table, table)
@@ -211,10 +223,15 @@ def get_relevant_tables(query: str, schema: dict, top_k: int = 10) -> list[str]:
             )
             if column_names:
                 description = f"{description} columns: {column_names}"
-        if description not in _DESC_EMBEDDINGS:
-            _DESC_EMBEDDINGS[description] = model.encode([description])
-        table_embedding = _DESC_EMBEDDINGS[description]
-        similarity = float(cosine_similarity(query_embedding, table_embedding)[0][0])
+        if model:
+            if description not in _DESC_EMBEDDINGS:
+                _DESC_EMBEDDINGS[description] = model.encode([description])
+            table_embedding = _DESC_EMBEDDINGS[description]
+            similarity = float(
+                cosine_similarity(query_embedding, table_embedding)[0][0]
+            )
+        else:
+            similarity = _token_overlap_score(query, description)
         similarity += _v2_boost(table, has_v2_tables)
         scored.append((table, similarity))
 

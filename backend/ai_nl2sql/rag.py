@@ -23,7 +23,10 @@ DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
 def _model() -> SentenceTransformer:
     global _MODEL
     if _MODEL is None:
-        _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        try:
+            _MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception:
+            _MODEL = False
     return _MODEL
 
 
@@ -118,6 +121,10 @@ def find_similar_query(
 
     normalized_query = normalize_query_for_similarity(query)
     model = _model()
+    if not model:
+        if DEBUG:
+            print("[RAG] embedding model unavailable, skipping semantic cache match")
+        return None, 0.0
     query_embedding = model.encode([normalized_query])
     stored_queries = [
         entry.get("normalized_query") or normalize_query_for_similarity(entry["query"])
