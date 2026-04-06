@@ -1,5 +1,6 @@
 import csv
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -61,6 +62,7 @@ class QueryResponse(BaseModel):
     success: bool
     cached: bool = False
     warning: str | None = None
+    chart_hint: str = "auto"
 
 
 class QueryDebugResponse(BaseModel):
@@ -100,6 +102,44 @@ def _build_zero_rows_warning(question: str, count: int) -> str | None:
             "Query ran but returned 0 rows. Filters or table path might be too strict."
         )
     return None
+
+
+def _classify_chart_hint(sql: str, columns: list[str], rows: list[tuple]) -> str:
+    if not rows or len(rows) <= 1:
+        return "none"
+
+    sql_upper = (sql or "").upper()
+    has_agg = bool(re.search(r"\b(COUNT|SUM|AVG|MAX|MIN)\s*\(", sql_upper))
+    has_group = "GROUP BY" in sql_upper
+
+    if has_agg and not has_group:
+        return "none"
+
+    date_keywords = [
+        "DATE_TRUNC",
+        "EXTRACT",
+        "MONTH",
+        "YEAR",
+        "CREATED",
+        "DISPENSED",
+        "ORDER",
+        "_AT",
+        "DATE",
+    ]
+    col_text = " ".join(columns).upper()
+    if has_group and (
+        any(keyword in sql_upper for keyword in date_keywords)
+        or any(keyword in col_text for keyword in date_keywords)
+    ):
+        return "line"
+
+    if has_group:
+        return "bar"
+
+    if len(rows) > 5:
+        return "none"
+
+    return "auto"
 
 
 def _run_query_with_fallback(
@@ -225,15 +265,19 @@ def _pick_date_column(columns: list[str], rows: list[dict]) -> str | None:
     return candidates[0]
 
 
-def _build_charts(columns: list[str], rows: list[dict]) -> list[dict]:
+def _build_charts(
+    columns: list[str], rows: list[dict], chart_hint: str = "auto"
+) -> list[dict]:
     charts = []
     if not rows:
+        return charts
+    if chart_hint == "none":
         return charts
 
     metric = _pick_metric_column(columns, rows)
     date_col = _pick_date_column(columns, rows)
 
-    if metric and date_col:
+    if metric and date_col and chart_hint in {"auto", "line"}:
         monthly = {}
         for row in rows:
             parsed = _parse_iso_date(row.get(date_col))
@@ -261,7 +305,7 @@ def _build_charts(columns: list[str], rows: list[dict]) -> list[dict]:
                 }
             )
 
-    if metric:
+    if metric and chart_hint in {"auto", "bar"}:
         category = None
         for col in columns:
             if col == metric:
@@ -396,13 +440,18 @@ def _get_report_payload(report_id: str) -> dict:
 
 
 def _build_report_payload(
-    question: str, sql: str, columns: list[str], rows: list[tuple], cached: bool
+    question: str,
+    sql: str,
+    columns: list[str],
+    rows: list[tuple],
+    cached: bool,
+    chart_hint: str = "auto",
 ) -> dict:
     safe_rows = [
         {col: _json_safe(row[idx]) for idx, col in enumerate(columns)} for row in rows
     ]
     kpis = _build_kpis(columns, safe_rows)
-    charts = _build_charts(columns, safe_rows)
+    charts = _build_charts(columns, safe_rows, chart_hint=chart_hint)
     summary = _build_summary(question, safe_rows, kpis, charts)
 
     report_id = str(uuid4())
@@ -414,6 +463,7 @@ def _build_report_payload(
         "sql": sql,
         "count": len(safe_rows),
         "cached": cached,
+        "chart_hint": chart_hint,
         "summary_text": summary,
         "kpis": kpis,
         "charts": charts,
@@ -525,6 +575,9 @@ def ai_report_query(
         success=True,
         cached=cached,
         warning=_build_zero_rows_warning(question, result["count"]),
+        chart_hint=_classify_chart_hint(
+            result.get("sql", ""), result.get("columns", []), result.get("rows", [])
+        ),
     )
 
 
@@ -604,6 +657,9 @@ def generate_report(
         columns=result["columns"],
         rows=result["rows"],
         cached=cached,
+        chart_hint=_classify_chart_hint(
+            result.get("sql", ""), result.get("columns", []), result.get("rows", [])
+        ),
     )
     _save_report_payload(report_payload)
 

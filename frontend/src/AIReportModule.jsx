@@ -16,17 +16,55 @@ function isNumeric(value) {
   return value !== null && value !== "" && !Number.isNaN(Number(value));
 }
 
+const SKIP_NAMES = [
+  "_id",
+  " id",
+  "record_id",
+  "batch_id",
+  "drug_id",
+  "patient_id",
+  "po_id",
+  "item_id",
+  "prescription_id",
+  "id",
+];
+
+function isIdColumn(name) {
+  const lower = String(name || "").toLowerCase();
+  return SKIP_NAMES.some((token) => lower.endsWith(token));
+}
+
 function scoreName(name, tokens) {
   const lower = String(name || "").toLowerCase();
   return tokens.some((t) => lower.includes(t));
 }
 
-function buildChartData(columns, rows) {
+function isChartWorthwhile(columns, rows) {
+  if (!rows || rows.length <= 1) return false;
+
+  const stringCandidates = columns
+    .map((col, idx) => ({ col, idx }))
+    .filter(({ col, idx }) => !isIdColumn(col) && rows.some((row) => typeof row[idx] === "string" && String(row[idx]).trim()));
+  if (!stringCandidates.length) return false;
+
+  const categoryIndex = stringCandidates[0].idx;
+  const distinct = new Set(rows.map((row) => String(row[categoryIndex] ?? "").trim()).filter(Boolean));
+  if (distinct.size < 2) return false;
+
+  const numericNonId = columns
+    .map((col, idx) => ({ col, idx }))
+    .filter(({ col, idx }) => !isIdColumn(col) && rows.some((row) => isNumeric(row[idx])));
+  if (!numericNonId.length) return false;
+
+  return true;
+}
+
+function buildChartData(columns, rows, chartHint = "auto") {
   if (!rows.length || !columns.length) return null;
 
   const numericCandidates = columns
     .map((col, idx) => ({ col, idx }))
-    .filter(({ col, idx }) => rows.some((row) => isNumeric(row[idx])) && !scoreName(col, ["_id", " id", "code"]));
+    .filter(({ col, idx }) => rows.some((row) => isNumeric(row[idx])) && !isIdColumn(col) && !scoreName(col, ["code"]));
   if (!numericCandidates.length) return null;
 
   const valueCandidate = numericCandidates.find(({ col }) => scoreName(col, ["total", "count", "sum", "quantity", "amount", "revenue", "sales"])) || numericCandidates[0];
@@ -34,10 +72,12 @@ function buildChartData(columns, rows) {
   const categoryCandidates = columns
     .map((col, idx) => ({ col, idx }))
     .filter(({ idx }) => idx !== valueCandidate.idx)
-    .filter(({ col, idx }) => rows.some((row) => typeof row[idx] === "string" && String(row[idx]).trim() !== ""));
+    .filter(({ col, idx }) => !isIdColumn(col) && rows.some((row) => typeof row[idx] === "string" && String(row[idx]).trim() !== ""));
   if (!categoryCandidates.length) return null;
 
-  const categoryCandidate = categoryCandidates.find(({ col }) => scoreName(col, ["name", "drug", "patient", "supplier", "month", "date", "status"])) || categoryCandidates[0];
+  const lineCategory = categoryCandidates.find(({ col }) => scoreName(col, ["month", "date", "year", "created", "dispensed", "ordered"]));
+  const barCategory = categoryCandidates.find(({ col }) => scoreName(col, ["name", "drug", "patient", "supplier", "status", "department"]));
+  const categoryCandidate = chartHint === "line" ? (lineCategory || barCategory || categoryCandidates[0]) : (barCategory || lineCategory || categoryCandidates[0]);
 
   const grouped = {};
   rows.forEach((row) => {
@@ -60,15 +100,20 @@ function buildChartData(columns, rows) {
   };
 }
 
-function ChartsPanel({ columns, rows }) {
+function ChartsPanel({ columns, rows, chartHint = "auto" }) {
+  if (chartHint === "none") return null;
   if (!rows || rows.length === 0 || !columns || columns.length === 0) return null;
-  const parsed = buildChartData(columns, rows);
+  if (!isChartWorthwhile(columns, rows)) return null;
+  const parsed = buildChartData(columns, rows, chartHint);
   if (!parsed) return null;
   const { labelColumn, valueColumn, chartData } = parsed;
+  const showBar = chartHint !== "line";
+  const showLine = chartHint !== "bar";
+  const columnTemplate = showBar && showLine ? "1fr 1fr" : "1fr";
 
   return (
-    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
-      <div style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 }}>
+    <div style={{ display: "grid", gap: 12, gridTemplateColumns: columnTemplate, marginTop: 12 }}>
+      {showBar && <div style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{valueColumn} by {labelColumn}</div>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 60 }}>
@@ -79,9 +124,9 @@ function ChartsPanel({ columns, rows }) {
             <Bar dataKey="value" fill="#22c55e" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </div>}
 
-      <div style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 }}>
+      {showLine && <div style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Trend of {valueColumn}</div>
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 60 }}>
@@ -92,7 +137,7 @@ function ChartsPanel({ columns, rows }) {
             <Line type="monotone" dataKey="value" stroke="#0ea5e9" strokeWidth={2} activeDot={{ r: 6 }} />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -210,7 +255,7 @@ export default function AIReportModule() {
 
       {result && (
         <>
-          <ChartsPanel columns={result.columns} rows={result.rows} />
+          <ChartsPanel columns={result.columns} rows={result.rows} chartHint={result.chart_hint || "auto"} />
           {result.warning && <div style={{ marginTop: 10, color: "#9a3412", fontWeight: 600 }}>{result.warning}</div>}
 
           {showSql && (

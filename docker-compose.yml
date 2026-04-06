@@ -38,6 +38,7 @@ services:
       AI_QUERY_MAX_ROWS: ${AI_QUERY_MAX_ROWS:-0}
       AI_SQL_TIMEOUT_MS: ${AI_SQL_TIMEOUT_MS:-5000}
       AI_RAG_THRESHOLD: ${AI_RAG_THRESHOLD:-0.9}
+      AI_STEINER_MIN_TERMINALS: ${AI_STEINER_MIN_TERMINALS:-3}
     depends_on:
       postgres:
         condition: service_healthy

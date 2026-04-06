@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from auth import router as auth_router
+from ai_report import _ensure_loaded as preload_ai_graph
 from ai_report import router as ai_report_router
 from audit_router import router as audit_log_router
 from dashboard import router as dashboard_router
@@ -25,7 +26,9 @@ from seed import seed_all
 from suppliers import router as suppliers_router
 from users import router as users_router
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger("healthora")
 
 # ─── Rate limiter ─────────────────────────────────────────────────────────────
@@ -40,7 +43,11 @@ def auto_expire_batches():
     db = SessionLocal()
     try:
         today = date.today()
-        expired = db.query(DrugBatch).filter(DrugBatch.expiry_date < today, DrugBatch.is_expired.is_(False)).all()
+        expired = (
+            db.query(DrugBatch)
+            .filter(DrugBatch.expiry_date < today, DrugBatch.is_expired.is_(False))
+            .all()
+        )
         if expired:
             for batch in expired:
                 batch.is_expired = True
@@ -68,8 +75,16 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
+    try:
+        preload_ai_graph()
+        logger.info("Preloaded AI schema graph")
+    except Exception:
+        logger.exception("Failed to preload AI schema graph")
+
     auto_expire_batches()
-    scheduler.add_job(auto_expire_batches, "cron", hour=0, minute=5)  # Run at 00:05 every day
+    scheduler.add_job(
+        auto_expire_batches, "cron", hour=0, minute=5
+    )  # Run at 00:05 every day
     scheduler.start()
     logger.info("Healthora backend started")
 
@@ -83,9 +98,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Healthora Backend", version="1.0.0", lifespan=lifespan)
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+)
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
-ALLOWED_ORIGIN_REGEX = os.getenv("ALLOWED_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?")
+ALLOWED_ORIGIN_REGEX = os.getenv(
+    "ALLOWED_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+)
 
 app.add_middleware(
     CORSMiddleware,

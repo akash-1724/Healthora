@@ -1,6 +1,8 @@
 import os
 from itertools import combinations
 
+import networkx as nx
+
 from .graph_builder import get_join_paths
 from .path_scorer import score_all_paths
 from .rag import find_similar_query, load_store
@@ -9,6 +11,21 @@ from .schema_linker import get_relevant_tables
 DEBUG = os.getenv("AI_DEBUG_NL2SQL", "false").strip().lower() == "true"
 TOP_K_TABLES = int(os.getenv("AI_LINKER_TOP_K", "10"))
 MAX_PATH_CANDIDATES = int(os.getenv("AI_MAX_PATH_CANDIDATES", "5"))
+STEINER_MIN_TERMINALS = int(os.getenv("AI_STEINER_MIN_TERMINALS", "3"))
+
+JOIN_INTENT_KEYWORDS = {
+    "join",
+    "between",
+    "with",
+    "across",
+    "by",
+    "per",
+    "from",
+    "vs",
+    "versus",
+    "compared",
+    "compare",
+}
 
 
 def score_relevant_table_coverage(path: list[str], relevant_tables: list[str]) -> float:
@@ -38,6 +55,42 @@ def _expand_tables_one_hop(tables: list[str], graph) -> list[str]:
     return expanded
 
 
+def _looks_like_multi_table_query(query: str) -> bool:
+    tokens = set((query or "").lower().replace("_", " ").split())
+    return bool(tokens.intersection(JOIN_INTENT_KEYWORDS))
+
+
+def _get_steiner_paths(graph, terminals: list[str]) -> list[list[str]]:
+    if len(terminals) < STEINER_MIN_TERMINALS:
+        return []
+
+    undirected = graph.to_undirected()
+    valid = [table for table in terminals if table in undirected]
+    if len(valid) < STEINER_MIN_TERMINALS:
+        return []
+
+    try:
+        tree = nx.algorithms.approximation.steinertree.steiner_tree(undirected, valid)
+    except Exception:
+        return []
+
+    if tree.number_of_nodes() == 0:
+        return []
+
+    candidates: list[list[str]] = []
+    cutoff = int(os.getenv("AI_JOIN_PATH_CUTOFF", "6"))
+    for start, end in combinations(valid, 2):
+        if start not in tree or end not in tree:
+            continue
+        try:
+            path = nx.shortest_path(tree, start, end)
+        except nx.NetworkXNoPath:
+            continue
+        if len(path) - 1 <= cutoff:
+            candidates.append(path)
+    return candidates
+
+
 def run_pipeline(
     query: str,
     schema: dict,
@@ -65,15 +118,28 @@ def run_pipeline(
 
     relevant_tables = get_relevant_tables(query, schema, top_k=TOP_K_TABLES)
     relevant_tables = [table for table in relevant_tables if table not in excluded]
+
+    if len(relevant_tables) == 1 and not _looks_like_multi_table_query(query):
+        single = [relevant_tables[0]]
+        scored_single = score_all_paths(query, [single], schema)
+        if not scored_single:
+            return [] if return_candidates else None
+        if return_candidates:
+            return scored_single[:MAX_PATH_CANDIDATES]
+        return scored_single[0]
+
     expanded_tables = _expand_tables_one_hop(relevant_tables, graph)
     expanded_tables = [table for table in expanded_tables if table not in excluded]
+    steiner_paths = _get_steiner_paths(graph, relevant_tables)
     if DEBUG:
         print(f"[PIPELINE] relevant_tables={relevant_tables}")
         print(f"[PIPELINE] expanded_tables={expanded_tables}")
+        print(f"[PIPELINE] steiner_paths={len(steiner_paths)}")
 
-    all_paths = []
-    for start, end in combinations(expanded_tables, 2):
-        all_paths.extend(get_join_paths(graph, start, end))
+    all_paths = list(steiner_paths)
+    if len(all_paths) < 2:
+        for start, end in combinations(expanded_tables, 2):
+            all_paths.extend(get_join_paths(graph, start, end))
 
     unique_paths = []
     seen = set()

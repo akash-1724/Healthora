@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from audit import log_action
 from database import get_db
 from deps import get_current_user, require_permission
-from models import Drug, PurchaseOrder, PurchaseOrderItem, Supplier, User
+from models import Drug, DrugBatch, PurchaseOrder, PurchaseOrderItem, Supplier, User
 from schemas import (
     PurchaseOrderCreate,
     PurchaseOrderItemRead,
@@ -41,13 +41,27 @@ def to_po_read(po: PurchaseOrder) -> PurchaseOrderRead:
     )
 
 
-@router.get("/purchase-orders", response_model=list[PurchaseOrderRead], dependencies=[Depends(require_permission("manage_inventory"))])
+@router.get(
+    "/purchase-orders",
+    response_model=list[PurchaseOrderRead],
+    dependencies=[Depends(require_permission("manage_inventory"))],
+)
 def list_purchase_orders(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    orders = db.query(PurchaseOrder).order_by(PurchaseOrder.po_id.desc()).offset(skip).limit(limit).all()
+    orders = (
+        db.query(PurchaseOrder)
+        .order_by(PurchaseOrder.po_id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return [to_po_read(po) for po in orders]
 
 
-@router.get("/purchase-orders/{po_id}", response_model=PurchaseOrderRead, dependencies=[Depends(require_permission("manage_inventory"))])
+@router.get(
+    "/purchase-orders/{po_id}",
+    response_model=PurchaseOrderRead,
+    dependencies=[Depends(require_permission("manage_inventory"))],
+)
 def get_purchase_order(po_id: int, db: Session = Depends(get_db)):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.po_id == po_id).first()
     if not po:
@@ -55,9 +69,23 @@ def get_purchase_order(po_id: int, db: Session = Depends(get_db)):
     return to_po_read(po)
 
 
-@router.post("/purchase-orders", response_model=PurchaseOrderRead, dependencies=[Depends(require_permission("manage_inventory"))])
-def create_purchase_order(payload: PurchaseOrderCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    supplier = db.query(Supplier).filter(Supplier.supplier_id == payload.supplier_id, Supplier.is_active.is_(True)).first()
+@router.post(
+    "/purchase-orders",
+    response_model=PurchaseOrderRead,
+    dependencies=[Depends(require_permission("manage_inventory"))],
+)
+def create_purchase_order(
+    payload: PurchaseOrderCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    supplier = (
+        db.query(Supplier)
+        .filter(
+            Supplier.supplier_id == payload.supplier_id, Supplier.is_active.is_(True)
+        )
+        .first()
+    )
     if not supplier:
         raise HTTPException(status_code=400, detail="Supplier not found or inactive")
 
@@ -73,31 +101,115 @@ def create_purchase_order(payload: PurchaseOrderCreate, db: Session = Depends(ge
     for item in payload.items:
         drug = db.query(Drug).filter(Drug.drug_id == item.drug_id).first()
         if not drug:
-            raise HTTPException(status_code=400, detail=f"Drug id {item.drug_id} not found")
-        db.add(PurchaseOrderItem(
-            po_id=po.po_id,
-            drug_id=item.drug_id,
-            quantity_ordered=item.quantity_ordered,
-            unit_price=item.unit_price,
-        ))
+            raise HTTPException(
+                status_code=400, detail=f"Drug id {item.drug_id} not found"
+            )
+        db.add(
+            PurchaseOrderItem(
+                po_id=po.po_id,
+                drug_id=item.drug_id,
+                quantity_ordered=item.quantity_ordered,
+                unit_price=item.unit_price,
+            )
+        )
 
-    log_action(db, "create_purchase_order", actor_user_id=current_user.user_id, target_table="purchase_orders", target_id=po.po_id)
+    log_action(
+        db,
+        "create_purchase_order",
+        actor_user_id=current_user.user_id,
+        target_table="purchase_orders",
+        target_id=po.po_id,
+    )
     db.commit()
     db.refresh(po)
     return to_po_read(po)
 
 
-@router.patch("/purchase-orders/{po_id}/status", response_model=PurchaseOrderRead, dependencies=[Depends(require_permission("manage_inventory"))])
-def update_po_status(po_id: int, payload: PurchaseOrderStatusUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.patch(
+    "/purchase-orders/{po_id}/status",
+    response_model=PurchaseOrderRead,
+    dependencies=[Depends(require_permission("manage_inventory"))],
+)
+def update_po_status(
+    po_id: int,
+    payload: PurchaseOrderStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.po_id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
     if payload.status not in ("received", "cancelled"):
-        raise HTTPException(status_code=400, detail="Status must be 'received' or 'cancelled'")
+        raise HTTPException(
+            status_code=400, detail="Status must be 'received' or 'cancelled'"
+        )
+    previous_status = (po.status or "").lower()
     po.status = payload.status
     if payload.status == "received":
+        if previous_status != "received":
+            for item in po.items:
+                receive_qty = int(item.quantity_received or 0)
+                if receive_qty <= 0:
+                    receive_qty = int(item.quantity_ordered or 0)
+                    item.quantity_received = receive_qty
+                if receive_qty <= 0:
+                    continue
+
+                batch = (
+                    db.query(DrugBatch)
+                    .filter(
+                        DrugBatch.drug_id == item.drug_id,
+                        DrugBatch.is_expired.is_(False),
+                    )
+                    .order_by(DrugBatch.expiry_date.asc(), DrugBatch.batch_id.asc())
+                    .first()
+                )
+                if not batch:
+                    template = (
+                        db.query(DrugBatch)
+                        .filter(DrugBatch.drug_id == item.drug_id)
+                        .order_by(DrugBatch.batch_id.desc())
+                        .first()
+                    )
+                    if template:
+                        next_batch_id = (
+                            db.query(DrugBatch.batch_id)
+                            .order_by(DrugBatch.batch_id.desc())
+                            .first()
+                            or [0]
+                        )[0] + 1
+                        batch = DrugBatch(
+                            batch_id=next_batch_id,
+                            drug_id=item.drug_id,
+                            batch_no=f"PO-{po.po_id}-{item.drug_id}-{next_batch_id}",
+                            expiry_date=max(
+                                template.expiry_date, date.today() + timedelta(days=180)
+                            ),
+                            purchase_price=item.unit_price or template.purchase_price,
+                            selling_price=template.selling_price,
+                            quantity_available=0,
+                            is_expired=False,
+                            supplier_id=po.supplier_id,
+                        )
+                        db.add(batch)
+                        db.flush()
+                    else:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"No batch template found for drug id {item.drug_id}",
+                        )
+
+                batch.quantity_available = (
+                    int(batch.quantity_available or 0) + receive_qty
+                )
         po.received_at = datetime.utcnow()
-    log_action(db, f"po_status_{payload.status}", actor_user_id=current_user.user_id, target_table="purchase_orders", target_id=po_id)
+    log_action(
+        db,
+        f"po_status_{payload.status}",
+        actor_user_id=current_user.user_id,
+        target_table="purchase_orders",
+        target_id=po_id,
+    )
     db.commit()
     db.refresh(po)
     return to_po_read(po)
