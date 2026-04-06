@@ -558,6 +558,16 @@ def ai_report_query(
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        message = str(exc)
+        if "rate limit" in message.lower() or "429" in message:
+            raise HTTPException(
+                status_code=503,
+                detail="AI provider rate limit reached. Please retry after some time.",
+            ) from exc
+        raise HTTPException(
+            status_code=500, detail=f"AI query failed: {message}"
+        ) from exc
 
     log_action(
         db,
@@ -633,6 +643,16 @@ def ai_report_query_debug(payload: QueryRequest, db: Session = Depends(get_db)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        message = str(exc)
+        if "rate limit" in message.lower() or "429" in message:
+            raise HTTPException(
+                status_code=503,
+                detail="AI provider rate limit reached. Please retry after some time.",
+            ) from exc
+        raise HTTPException(
+            status_code=500, detail=f"AI debug query failed: {message}"
+        ) from exc
 
     return QueryDebugResponse(
         question=question,
@@ -663,8 +683,14 @@ def generate_report(
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
+        message = str(exc)
+        if "rate limit" in message.lower() or "429" in message:
+            raise HTTPException(
+                status_code=503,
+                detail="AI provider rate limit reached. Please retry after some time.",
+            ) from exc
         raise HTTPException(
-            status_code=500, detail=f"AI report generation failed: {exc}"
+            status_code=500, detail=f"AI report generation failed: {message}"
         ) from exc
 
     report_payload = _build_report_payload(
