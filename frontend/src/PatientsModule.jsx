@@ -2,6 +2,49 @@ import React, { useState } from "react";
 import { api } from "./api";
 import Modal from "./Modal";
 
+function PatientForm({
+    form,
+    setForm,
+    onSubmit,
+    submitLabel,
+    genderOptions,
+    bloodGroups,
+    today,
+    error,
+}) {
+    return (
+        <form onSubmit={onSubmit}>
+            <label>Full Name *</label>
+            <input className="input" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} required />
+            <label>Gender</label>
+            <select className="input" value={form.gender} onChange={(e) => setForm((p) => ({ ...p, gender: e.target.value }))}>
+                {genderOptions.map((g) => <option key={g} value={g}>{g || "— Select —"}</option>)}
+            </select>
+            <label>Date of Birth</label>
+            <input
+                className="input"
+                type="date"
+                value={form.dob || ""}
+                min="1900-01-01"
+                max={today}
+                onChange={(e) => setForm((p) => ({ ...p, dob: e.target.value }))}
+            />
+            <label>Contact Number</label>
+            <input className="input" type="tel" value={form.contact} onChange={(e) => setForm((p) => ({ ...p, contact: e.target.value }))} placeholder="+91-XXXXX-XXXXX" />
+            <label>Blood Group</label>
+            <select className="input" value={form.blood_group} onChange={(e) => setForm((p) => ({ ...p, blood_group: e.target.value }))}>
+                {bloodGroups.map((bg) => <option key={bg} value={bg}>{bg || "— Select —"}</option>)}
+            </select>
+            <label>Address</label>
+            <input className="input" value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} />
+            {error && <p className="error">{error}</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="primary-btn" type="submit">{submitLabel}</button>
+            </div>
+        </form>
+    );
+}
+
 export default function PatientsModule({ patients, hasPermission, onRefresh }) {
     const [search, setSearch] = useState("");
     const [showAddModal, setShowAddModal] = useState(false);
@@ -105,40 +148,6 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
         return "";
     }
 
-    function PatientForm({ form, setForm, onSubmit, submitLabel }) {
-        return (
-            <form onSubmit={onSubmit}>
-                <label>Full Name *</label>
-                <input className="input" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} required />
-                <label>Gender</label>
-                <select className="input" value={form.gender} onChange={(e) => setForm(p => ({ ...p, gender: e.target.value }))}>
-                    {genderOptions.map((g) => <option key={g} value={g}>{g || "— Select —"}</option>)}
-                </select>
-                <label>Date of Birth</label>
-                <input
-                    className="input"
-                    type="date"
-                    value={form.dob || ""}
-                    min="1900-01-01"
-                    max={today}
-                    onChange={(e) => setForm(p => ({ ...p, dob: e.target.value }))}
-                />
-                <label>Contact Number</label>
-                <input className="input" type="tel" value={form.contact} onChange={(e) => setForm(p => ({ ...p, contact: e.target.value }))} placeholder="+91-XXXXX-XXXXX" />
-                <label>Blood Group</label>
-                <select className="input" value={form.blood_group} onChange={(e) => setForm(p => ({ ...p, blood_group: e.target.value }))}>
-                    {bloodGroups.map((bg) => <option key={bg} value={bg}>{bg || "— Select —"}</option>)}
-                </select>
-                <label>Address</label>
-                <input className="input" value={form.address} onChange={(e) => setForm(p => ({ ...p, address: e.target.value }))} />
-                {error && <p className="error">{error}</p>}
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button className="primary-btn" type="submit">{submitLabel}</button>
-                </div>
-            </form>
-        );
-    }
-
     return (
         <div className="section">
             <div className="section-header">
@@ -181,11 +190,29 @@ export default function PatientsModule({ patients, hasPermission, onRefresh }) {
             </div>
 
             <Modal open={showAddModal} onClose={() => setShowAddModal(false)} title="Register New Patient">
-                <PatientForm form={newPatient} setForm={setNewPatient} onSubmit={createPatient} submitLabel="Register Patient" />
+                <PatientForm
+                    form={newPatient}
+                    setForm={setNewPatient}
+                    onSubmit={createPatient}
+                    submitLabel="Register Patient"
+                    genderOptions={genderOptions}
+                    bloodGroups={bloodGroups}
+                    today={today}
+                    error={error}
+                />
             </Modal>
 
             <Modal open={showEditModal} onClose={() => setShowEditModal(false)} title={`Edit Patient: ${editTarget?.name}`}>
-                <PatientForm form={editForm} setForm={setEditForm} onSubmit={saveEdit} submitLabel="Save Changes" />
+                <PatientForm
+                    form={editForm}
+                    setForm={setEditForm}
+                    onSubmit={saveEdit}
+                    submitLabel="Save Changes"
+                    genderOptions={genderOptions}
+                    bloodGroups={bloodGroups}
+                    today={today}
+                    error={error}
+                />
             </Modal>
         </div>
     );
