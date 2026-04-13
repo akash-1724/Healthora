@@ -27,6 +27,7 @@ from ai_nl2sql import (
     load_store,
     run_pipeline,
 )
+from ai_nl2sql.intent_router import route_query_template
 from ai_nl2sql.schema_linker import get_relevant_tables
 from audit import log_action
 from database import get_db
@@ -153,6 +154,8 @@ def _is_semantically_valid_sql(
     if "most sold medicine" in q and "department" in q:
         if "department" not in s or "group by" not in s:
             return False, "Department sales intent missing required grouping"
+        if "partition by department" not in s and "row_number" not in s:
+            return False, "Top medicine per department requires partition ranking"
 
     if "encounter" in q and "department" in q and "encounter" not in s:
         return False, "Encounter query does not use encounter table"
@@ -182,6 +185,21 @@ def _run_query_with_fallback(
     excluded_tables: set[str] = set()
     last_error = None
     tried_paths: set[tuple[str, ...]] = set()
+
+    template = route_query_template(question, schema, current_user_id=current_user_id)
+    if template:
+        sql = template["sql"]
+        template_path = [t for t in template.get("path", []) if t in schema]
+        best_path = {"path": template_path, "route_intent": template.get("intent")}
+        valid_sql, reason = _is_semantically_valid_sql(question, sql, current_user_id)
+        if valid_sql:
+            cached = _is_cached(question, sql)
+            result = execute_with_retry(db, question, sql, schema, best_path)
+            if result.get("success"):
+                return result, sql, cached, best_path
+            last_error = result.get("technical_error") or result.get("error")
+        else:
+            last_error = reason
 
     for _ in range(3):
         raw_candidates = run_pipeline(
